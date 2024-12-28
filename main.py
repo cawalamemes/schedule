@@ -10,7 +10,7 @@ from bson import ObjectId
 from pymongo import MongoClient
 
 # MongoDB Configuration
-client = MongoClient("mongodb://localhost:27017/")
+client = MongoClient("mongodb+srv://itsharshit:5hiOsDJBc0sihKCc@mcs.o129f.mongodb.net/?retryWrites=true&w=majority&appName=mcs")
 db = client["course_app"]
 courses_collection = db["courses"]
 
