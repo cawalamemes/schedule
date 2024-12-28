@@ -9,6 +9,8 @@ import json
 
 app = FastAPI()
 
+PORT= 9216
+
 # Static and Template Directories
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
@@ -157,3 +159,7 @@ async def reorder_plans(request: Request):
     new_order = json.loads(body["new_order"])
     courses[course_index].plans = [courses[course_index].plans[i] for i in new_order]
     return RedirectResponse(url="/admin", status_code=303)
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=PORT)
