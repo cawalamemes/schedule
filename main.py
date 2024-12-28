@@ -13,6 +13,7 @@ templates = Jinja2Templates(directory="templates")
 # Hardcoded admin credentials
 ADMIN_EMAIL = "admin@site.com"
 ADMIN_PASSWORD = "password"
+PORT= 9216
 
 # Simulate session storage
 is_logged_in = False
@@ -88,4 +89,7 @@ async def update_plan_order(course_index: int = Form(...), new_order: str = Form
         courses[course_index].plans.clear()
         courses[course_index].plans.extend(reordered_plans)
     return RedirectResponse("/admin", status_code=303)
-
+    
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=PORT)
