@@ -70,7 +70,7 @@ async def add_course(title: str = Form(...)):
     courses_collection.insert_one(new_course)  # Insert new course into MongoDB
     return RedirectResponse(url="/admin", status_code=303)
 
-
+"""
 @app.post("/add-plan")
 async def add_plan(course_id: str = Form(...), name: str = Form(...), file: UploadFile = None):
     pdf_path = f"static/pdfs/{file.filename}"
@@ -79,7 +79,37 @@ async def add_plan(course_id: str = Form(...), name: str = Form(...), file: Uplo
     plan = {"name": name, "pdf_url": f"/{pdf_path}"}
     courses_collection.update_one({"_id": ObjectId(course_id)}, {"$push": {"plans": plan}})
     return RedirectResponse(url="/admin", status_code=303)
-
+"""
+@app.post("/add-plan")
+async def add_plan(
+    course_id: str = Form(...), 
+    name: str = Form(...), 
+    file: UploadFile = None
+):
+    # Ensure the file is uploaded and handled correctly
+    if file is None:
+        raise HTTPException(status_code=400, detail="File is required")
+    
+    # Save the uploaded file
+    pdf_path = f"static/pdfs/{file.filename}"
+    os.makedirs(os.path.dirname(pdf_path), exist_ok=True)  # Ensure directory exists
+    with open(pdf_path, "wb") as f:
+        f.write(await file.read())
+    
+    # Create the plan object
+    plan = {"name": name, "pdf_url": f"/{pdf_path}"}
+    
+    # Update the course in MongoDB
+    result = courses_collection.update_one(
+        {"_id": ObjectId(course_id)}, 
+        {"$push": {"plans": plan}}
+    )
+    
+    # Check if the course was updated
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Course not found")
+    
+    return RedirectResponse(url="/admin", status_code=303)
 
 @app.post("/delete-course")
 async def delete_course(course_id: str = Form(...)):
