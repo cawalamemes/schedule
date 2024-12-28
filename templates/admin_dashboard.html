@@ -20,6 +20,40 @@
         <button class="btn btn-success">Add Course</button>
     </form>
 
+
+<!-- Reorder Courses -->
+<form action="/update-course-order" method="post" id="courseOrderForm">
+    <input type="hidden" name="new_order" id="courseOrder">
+    <ul class="list-group mb-3" id="courseList">
+        {% for course in courses %}
+        <li class="list-group-item d-flex justify-content-between align-items-center" data-index="{{ loop.index0 }}">
+            {{ course.title }}
+            <button type="button" class="btn btn-secondary btn-sm">Drag</button>
+        </li>
+        {% endfor %}
+    </ul>
+    <button class="btn btn-primary">Update Course Order</button>
+</form>
+
+<!-- Reorder Plans -->
+{% for course in courses %}
+<form action="/update-plan-order" method="post" id="planOrderForm-{{ loop.index0 }}">
+    <input type="hidden" name="course_index" value="{{ loop.index0 }}">
+    <input type="hidden" name="new_order" id="planOrder-{{ loop.index0 }}">
+    <ul class="list-group mb-3" id="planList-{{ loop.index0 }}">
+        {% for plan in course.plans %}
+        <li class="list-group-item d-flex justify-content-between align-items-center" data-index="{{ loop.index0 }}">
+            {{ plan.name }}
+            <button type="button" class="btn btn-secondary btn-sm">Drag</button>
+        </li>
+        {% endfor %}
+    </ul>
+    <button class="btn btn-primary">Update Plan Order</button>
+</form>
+{% endfor %}
+
+
+    
     <!-- Manage Courses -->
     <h2>Manage Courses</h2>
     {% for course in courses %}
@@ -67,13 +101,22 @@
 </div>
 
 <script>
-    // Enable sorting for course plans
-    {% for course in courses %}
-    Sortable.create(document.getElementById('plansList-{{ loop.index0 }}'), {
+    // Reorder Courses
+    const courseList = document.getElementById("courseList");
+    Sortable.create(courseList, {
         onEnd: function () {
-            const order = Array.from(document.getElementById('plansList-{{ loop.index0 }}').children)
-                .map(item => item.dataset.index);
-            document.getElementById('newOrder-{{ loop.index0 }}').value = JSON.stringify(order);
+            const order = Array.from(courseList.children).map(item => item.dataset.index);
+            document.getElementById("courseOrder").value = JSON.stringify(order);
+        }
+    });
+
+    // Reorder Plans for each course
+    {% for course in courses %}
+    const planList = document.getElementById("planList-{{ loop.index0 }}");
+    Sortable.create(planList, {
+        onEnd: function () {
+            const order = Array.from(planList.children).map(item => item.dataset.index);
+            document.getElementById("planOrder-{{ loop.index0 }}").value = JSON.stringify(order);
         }
     });
     {% endfor %}
