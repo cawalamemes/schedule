@@ -19,7 +19,10 @@ templates = Jinja2Templates(directory="templates")
 # Redis Configuration
 
 # Configuration
-REDIS_URI = REDIS_URI.split(":")
+REDIS = ""
+REDIS_PASSWORD = ""
+
+REDIS_URI = REDIS.split(":")
 host = REDIS_URI[0]
 port = int(REDIS_URI[1])
 password = REDIS_PASSWORD
