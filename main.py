@@ -2,17 +2,10 @@ from fastapi import FastAPI, Form, UploadFile, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
 from typing import List
+from pydantic import BaseModel
 import os
 import json
-from bson import ObjectId
-from pymongo import MongoClient
-
-# MongoDB Configuration
-client = MongoClient("mongodb+srv://itsharshit:5hiOsDJBc0sihKCc@mcs.o129f.mongodb.net/?retryWrites=true&w=majority&appName=mcs")
-db = client["course_app"]
-courses_collection = db["courses"]
 
 app = FastAPI()
 
@@ -21,6 +14,9 @@ PORT = 9216
 # Static and Template Directories
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+
+# In-memory Database
+courses = []
 
 admin_credentials = {"email": "admin@site.com", "password": "password"}
 admin_logged_in = False
@@ -38,7 +34,6 @@ class Course(BaseModel):
 
 @app.get("/", response_class=HTMLResponse)
 async def user_dashboard(request: Request):
-    courses = list(courses_collection.find({}, {"_id": 0}))  # Fetch all courses
     return templates.TemplateResponse("user_dashboard.html", {"request": request, "courses": courses})
 
 
@@ -60,94 +55,62 @@ async def admin_login_post(email: str = Form(...), password: str = Form(...)):
 async def admin_dashboard(request: Request):
     if not admin_logged_in:
         return RedirectResponse(url="/admin/login", status_code=303)
-    courses = list(courses_collection.find({}, {"_id": 0}))
     return templates.TemplateResponse("admin_dashboard.html", {"request": request, "courses": courses})
 
 
 @app.post("/add-course")
 async def add_course(title: str = Form(...)):
-    new_course = {"title": title, "plans": []}
-    courses_collection.insert_one(new_course)  # Insert new course into MongoDB
+    courses.append(Course(title=title, plans=[]))
     return RedirectResponse(url="/admin", status_code=303)
 
-"""
+
 @app.post("/add-plan")
-async def add_plan(course_id: str = Form(...), name: str = Form(...), file: UploadFile = None):
-    pdf_path = f"static/pdfs/{file.filename}"
-    with open(pdf_path, "wb") as f:
-        f.write(file.file.read())
-    plan = {"name": name, "pdf_url": f"/{pdf_path}"}
-    courses_collection.update_one({"_id": ObjectId(course_id)}, {"$push": {"plans": plan}})
-    return RedirectResponse(url="/admin", status_code=303)
-"""
-@app.post("/add-plan")
-async def add_plan(
-    course_id: str = Form(...), 
-    name: str = Form(...), 
-    file: UploadFile = None
-):
-    # Ensure the file is uploaded and handled correctly
-    if file is None:
-        raise HTTPException(status_code=400, detail="File is required")
-    
-    # Save the uploaded file
-    pdf_path = f"static/pdfs/{file.filename}"
-    os.makedirs(os.path.dirname(pdf_path), exist_ok=True)  # Ensure directory exists
-    with open(pdf_path, "wb") as f:
-        f.write(await file.read())
-    
-    # Create the plan object
-    plan = {"name": name, "pdf_url": f"/{pdf_path}"}
-    
-    # Update the course in MongoDB
-    result = courses_collection.update_one(
-        {"_id": ObjectId(course_id)}, 
-        {"$push": {"plans": plan}}
-    )
-    
-    # Check if the course was updated
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Course not found")
-    
-    return RedirectResponse(url="/admin", status_code=303)
+async def add_plan(course_index: int = Form(...), name: str = Form(...), file: UploadFile = None):
+    if 0 <= course_index < len(courses):
+        pdf_path = f"static/pdfs/{file.filename}"
+        with open(pdf_path, "wb") as f:
+            f.write(file.file.read())
+        courses[course_index].plans.append(Plan(name=name, pdf_url=f"/{pdf_path}"))
+        return RedirectResponse(url="/admin", status_code=303)
+    raise HTTPException(status_code=404, detail="Course not found")
+
 
 @app.post("/delete-course")
-async def delete_course(course_id: str = Form(...)):
-    result = courses_collection.delete_one({"_id": ObjectId(course_id)})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Course not found")
-    return RedirectResponse(url="/admin", status_code=303)
+async def delete_course(course_index: int = Form(...)):
+    if 0 <= course_index < len(courses):
+        courses.pop(course_index)
+        return RedirectResponse(url="/admin", status_code=303)
+    raise HTTPException(status_code=404, detail="Course not found")
 
 
 @app.post("/delete-plan")
-async def delete_plan(course_id: str = Form(...), plan_index: int = Form(...)):
-    course = courses_collection.find_one({"_id": ObjectId(course_id)})
-    if not course or plan_index < 0 or plan_index >= len(course["plans"]):
-        raise HTTPException(status_code=404, detail="Plan not found")
-    course["plans"].pop(plan_index)
-    courses_collection.update_one({"_id": ObjectId(course_id)}, {"$set": {"plans": course["plans"]}})
-    return RedirectResponse(url="/admin", status_code=303)
+async def delete_plan(course_index: int = Form(...), plan_index: int = Form(...)):
+    if 0 <= course_index < len(courses) and 0 <= plan_index < len(courses[course_index].plans):
+        courses[course_index].plans.pop(plan_index)
+        return RedirectResponse(url="/admin", status_code=303)
+    raise HTTPException(status_code=404, detail="Plan not found")
 
 
 @app.post("/reorder-courses")
 async def reorder_courses(request: Request):
+    global courses
     body = await request.form()
     new_order = json.loads(body["new_order"])
-    # Update the order field in MongoDB if needed, or reorder client-side
-    return RedirectResponse(url="/admin", status_code=303)
+    if len(new_order) == len(courses):
+        courses = [courses[i] for i in new_order]
+        return RedirectResponse(url="/admin", status_code=303)
+    raise HTTPException(status_code=400, detail="Invalid order")
 
 
 @app.post("/reorder-plans")
 async def reorder_plans(request: Request):
     body = await request.form()
-    course_id = body["course_id"]
+    course_index = int(body["course_index"])
     new_order = json.loads(body["new_order"])
-    course = courses_collection.find_one({"_id": ObjectId(course_id)})
-    if not course or len(new_order) != len(course["plans"]):
-        raise HTTPException(status_code=400, detail="Invalid order")
-    reordered_plans = [course["plans"][i] for i in new_order]
-    courses_collection.update_one({"_id": ObjectId(course_id)}, {"$set": {"plans": reordered_plans}})
-    return RedirectResponse(url="/admin", status_code=303)
+    if 0 <= course_index < len(courses) and len(new_order) == len(courses[course_index].plans):
+        courses[course_index].plans = [courses[course_index].plans[i] for i in new_order]
+        return RedirectResponse(url="/admin", status_code=303)
+    raise HTTPException(status_code=400, detail="Invalid order")
 
 
 if __name__ == "__main__":
