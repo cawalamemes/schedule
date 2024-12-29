@@ -26,7 +26,21 @@ REDIS_URI = REDIS.split(":")
 host = REDIS_URI[0]
 port = int(REDIS_URI[1])
 password = REDIS_PASSWORD
-redis_client = redis.StrictRedis(host, port, password, decode_responses=True)
+
+redis_client = redis.StrictRedis(
+    host=host,
+    port=port,
+    password=password,
+    decode_responses=True  # Ensure response strings are decoded
+)
+
+try:
+    redis_client.ping()
+    print("Connected to Redis!")
+except redis.AuthenticationError:
+    print("Authentication failed: Check your password")
+except redis.ConnectionError:
+    print("Connection error: Check your host and port")
 
 # Admin Credentials
 admin_credentials = {"email": "admin@site.com", "password": "password"}
