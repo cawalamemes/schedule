@@ -6,6 +6,7 @@ from typing import List
 from pydantic import BaseModel
 import os
 import json
+import redis
 
 app = FastAPI()
 
@@ -15,9 +16,16 @@ PORT = 9216
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-# In-memory Database
-courses = []
+# Redis Configuration
 
+# Configuration
+REDIS_URI = REDIS_URI.split(":")
+host = REDIS_URI[0]
+port = int(REDIS_URI[1])
+password = REDIS_PASSWORD
+redis_client = redis.StrictRedis(host, port, db, password, decode_responses=True)
+
+# Admin Credentials
 admin_credentials = {"email": "admin@site.com", "password": "password"}
 admin_logged_in = False
 
@@ -32,8 +40,19 @@ class Course(BaseModel):
     plans: List[Plan] = []
 
 
+# Helper Functions
+def get_courses():
+    courses_json = redis_client.get("courses")
+    return json.loads(courses_json) if courses_json else []
+
+
+def save_courses(courses):
+    redis_client.set("courses", json.dumps(courses, default=lambda o: o.dict()))
+
+
 @app.get("/", response_class=HTMLResponse)
 async def user_dashboard(request: Request):
+    courses = get_courses()
     return templates.TemplateResponse("user_dashboard.html", {"request": request, "courses": courses})
 
 
@@ -55,70 +74,59 @@ async def admin_login_post(email: str = Form(...), password: str = Form(...)):
 async def admin_dashboard(request: Request):
     if not admin_logged_in:
         return RedirectResponse(url="/admin/login", status_code=303)
+    courses = get_courses()
     return templates.TemplateResponse("admin_dashboard.html", {"request": request, "courses": courses})
 
 
 @app.post("/add-course")
 async def add_course(title: str = Form(...)):
-    courses.append(Course(title=title, plans=[]))
+    courses = get_courses()
+    courses.append({"title": title, "plans": []})
+    save_courses(courses)
     return RedirectResponse(url="/admin", status_code=303)
 
 
 @app.post("/add-plan")
 async def add_plan(course_index: int = Form(...), name: str = Form(...), file: UploadFile = None):
+    courses = get_courses()
     if 0 <= course_index < len(courses):
         pdf_path = f"static/pdfs/{file.filename}"
         with open(pdf_path, "wb") as f:
             f.write(file.file.read())
-        courses[course_index].plans.append(Plan(name=name, pdf_url=f"/{pdf_path}"))
+        courses[course_index]["plans"].append({"name": name, "pdf_url": f"/{pdf_path}"})
+        save_courses(courses)
         return RedirectResponse(url="/admin", status_code=303)
     raise HTTPException(status_code=404, detail="Course not found")
 
 
 @app.post("/delete-course")
 async def delete_course(course_index: int = Form(...)):
+    courses = get_courses()
     if 0 <= course_index < len(courses):
         courses.pop(course_index)
+        save_courses(courses)
         return RedirectResponse(url="/admin", status_code=303)
     raise HTTPException(status_code=404, detail="Course not found")
 
 
 @app.post("/delete-plan")
 async def delete_plan(course_index: int = Form(...), plan_index: int = Form(...)):
-    if 0 <= course_index < len(courses) and 0 <= plan_index < len(courses[course_index].plans):
-        courses[course_index].plans.pop(plan_index)
+    courses = get_courses()
+    if 0 <= course_index < len(courses) and 0 <= plan_index < len(courses[course_index]["plans"]):
+        courses[course_index]["plans"].pop(plan_index)
+        save_courses(courses)
         return RedirectResponse(url="/admin", status_code=303)
     raise HTTPException(status_code=404, detail="Plan not found")
 
 
-@app.post("/reorder-courses")
-async def reorder_courses(request: Request):
-    global courses
-    body = await request.form()
-    new_order = json.loads(body["new_order"])
-    if len(new_order) == len(courses):
-        courses = [courses[i] for i in new_order]
-        return RedirectResponse(url="/admin", status_code=303)
-    raise HTTPException(status_code=400, detail="Invalid order")
-
-
-@app.post("/reorder-plans")
-async def reorder_plans(request: Request):
-    body = await request.form()
-    course_index = int(body["course_index"])
-    new_order = json.loads(body["new_order"])
-    if 0 <= course_index < len(courses) and len(new_order) == len(courses[course_index].plans):
-        courses[course_index].plans = [courses[course_index].plans[i] for i in new_order]
-        return RedirectResponse(url="/admin", status_code=303)
-    raise HTTPException(status_code=400, detail="Invalid order")
-
 @app.post("/update-course-order")
 async def update_course_order(request: Request):
-    global courses
     body = await request.form()
     new_order = json.loads(body["new_order"])
+    courses = get_courses()
     if len(new_order) == len(courses):
         courses = [courses[int(i)] for i in new_order]
+        save_courses(courses)
         return RedirectResponse(url="/admin", status_code=303)
     raise HTTPException(status_code=400, detail="Invalid course order")
 
@@ -128,8 +136,10 @@ async def update_plan_order(request: Request):
     body = await request.form()
     course_index = int(body["course_index"])
     new_order = json.loads(body["new_order"])
-    if 0 <= course_index < len(courses) and len(new_order) == len(courses[course_index].plans):
-        courses[course_index].plans = [courses[course_index].plans[int(i)] for i in new_order]
+    courses = get_courses()
+    if 0 <= course_index < len(courses) and len(new_order) == len(courses[course_index]["plans"]):
+        courses[course_index]["plans"] = [courses[course_index]["plans"][int(i)] for i in new_order]
+        save_courses(courses)
         return RedirectResponse(url="/admin", status_code=303)
     raise HTTPException(status_code=400, detail="Invalid plan order")
 
