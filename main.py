@@ -19,8 +19,8 @@ templates = Jinja2Templates(directory="templates")
 # Redis Configuration
 
 # Configuration
-REDIS = ""
-REDIS_PASSWORD = ""
+REDIS = "redis-19912.crce179.ap-south-1-1.ec2.redns.redis-cloud.com:19912"
+REDIS_PASSWORD = "2L7qgMeLou5rezLa6XU2iNIDdG1RSTUq"
 
 REDIS_URI = REDIS.split(":")
 host = REDIS_URI[0]
