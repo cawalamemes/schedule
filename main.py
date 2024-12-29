@@ -19,8 +19,8 @@ templates = Jinja2Templates(directory="templates")
 # Redis Configuration
 
 # Configuration
-REDIS = "redis-19912.crce179.ap-south-1-1.ec2.redns.redis-cloud.com:19912"
-REDIS_PASSWORD = "2L7qgMeLou5rezLa6XU2iNIDdG1RSTUq"
+REDIS = os.getenv("REDIS_URI")
+REDIS_PASSWORD = os.getenv("REDIS_PASSWORD")
 
 REDIS_URI = REDIS.split(":")
 host = REDIS_URI[0]
@@ -43,9 +43,11 @@ except redis.ConnectionError:
     print("Connection error: Check your host and port")
 
 # Admin Credentials
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+
 admin_credentials = {"email": "admin@site.com", "password": "password"}
 admin_logged_in = False
-
 
 class Plan(BaseModel):
     name: str
@@ -81,7 +83,7 @@ async def admin_login(request: Request):
 @app.post("/admin/login")
 async def admin_login_post(email: str = Form(...), password: str = Form(...)):
     global admin_logged_in
-    if email == admin_credentials["email"] and password == admin_credentials["password"]:
+    if email == ADMIN_EMAIL and password == ADMIN_PASSWORD:
         admin_logged_in = True
         return RedirectResponse(url="/admin", status_code=303)
     raise HTTPException(status_code=401, detail="Invalid credentials")
