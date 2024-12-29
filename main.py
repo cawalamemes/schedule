@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Form, UploadFile, Request, Depends, HTTPException
+from fastapi import FastAPI, Form, Depends, HTTPException, Response, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -7,6 +7,7 @@ from pydantic import BaseModel
 import os
 import json
 import redis
+import uuid
 
 app = FastAPI()
 
@@ -17,8 +18,6 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 # Redis Configuration
-
-# Configuration
 REDIS = "redis-19912.crce179.ap-south-1-1.ec2.redns.redis-cloud.com:19912"
 REDIS_PASSWORD = "2L7qgMeLou5rezLa6XU2iNIDdG1RSTUq"
 
@@ -31,7 +30,7 @@ redis_client = redis.StrictRedis(
     host=host,
     port=port,
     password=password,
-    decode_responses=True  # Ensure response strings are decoded
+    decode_responses=True
 )
 
 try:
@@ -44,7 +43,6 @@ except redis.ConnectionError:
 
 # Admin Credentials
 admin_credentials = {"email": "admin@site.com", "password": "password"}
-admin_logged_in = False
 
 
 class Plan(BaseModel):
@@ -67,6 +65,18 @@ def save_courses(courses):
     redis_client.set("courses", json.dumps(courses, default=lambda o: o.dict()))
 
 
+def is_logged_in(request: Request):
+    token = request.cookies.get("admin_token")
+    if token and redis_client.get(token) == "logged_in":
+        return True
+    return False
+
+
+def require_login(request: Request):
+    if not is_logged_in(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
 @app.get("/", response_class=HTMLResponse)
 async def user_dashboard(request: Request):
     courses = get_courses()
@@ -79,24 +89,35 @@ async def admin_login(request: Request):
 
 
 @app.post("/admin/login")
-async def admin_login_post(email: str = Form(...), password: str = Form(...)):
-    global admin_logged_in
+async def admin_login_post(response: Response, email: str = Form(...), password: str = Form(...)):
     if email == admin_credentials["email"] and password == admin_credentials["password"]:
-        admin_logged_in = True
+        # Generate a session token
+        session_token = str(uuid.uuid4())
+        redis_client.set(session_token, "logged_in", ex=3600)  # Token expires in 1 hour
+        response.set_cookie(key="admin_token", value=session_token, httponly=True)
         return RedirectResponse(url="/admin", status_code=303)
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard(request: Request):
-    if not admin_logged_in:
-        return RedirectResponse(url="/admin/login", status_code=303)
+    require_login(request)
     courses = get_courses()
     return templates.TemplateResponse("admin_dashboard.html", {"request": request, "courses": courses})
 
 
+@app.post("/admin/logout")
+async def admin_logout(response: Response):
+    token = response.cookies.get("admin_token")
+    if token:
+        redis_client.delete(token)
+    response.delete_cookie("admin_token")
+    return RedirectResponse(url="/admin/login", status_code=303)
+
+
 @app.post("/add-course")
-async def add_course(title: str = Form(...)):
+async def add_course(request: Request, title: str = Form(...)):
+    require_login(request)
     courses = get_courses()
     courses.append({"title": title, "plans": []})
     save_courses(courses)
@@ -104,7 +125,8 @@ async def add_course(title: str = Form(...)):
 
 
 @app.post("/add-plan")
-async def add_plan(course_index: int = Form(...), name: str = Form(...), file: UploadFile = None):
+async def add_plan(request: Request, course_index: int = Form(...), name: str = Form(...), file: UploadFile = None):
+    require_login(request)
     courses = get_courses()
     if 0 <= course_index < len(courses):
         pdf_path = f"static/pdfs/{file.filename}"
@@ -117,7 +139,8 @@ async def add_plan(course_index: int = Form(...), name: str = Form(...), file: U
 
 
 @app.post("/delete-course")
-async def delete_course(course_index: int = Form(...)):
+async def delete_course(request: Request, course_index: int = Form(...)):
+    require_login(request)
     courses = get_courses()
     if 0 <= course_index < len(courses):
         courses.pop(course_index)
@@ -127,7 +150,8 @@ async def delete_course(course_index: int = Form(...)):
 
 
 @app.post("/delete-plan")
-async def delete_plan(course_index: int = Form(...), plan_index: int = Form(...)):
+async def delete_plan(request: Request, course_index: int = Form(...), plan_index: int = Form(...)):
+    require_login(request)
     courses = get_courses()
     if 0 <= course_index < len(courses) and 0 <= plan_index < len(courses[course_index]["plans"]):
         courses[course_index]["plans"].pop(plan_index)
@@ -138,6 +162,7 @@ async def delete_plan(course_index: int = Form(...), plan_index: int = Form(...)
 
 @app.post("/update-course-order")
 async def update_course_order(request: Request):
+    require_login(request)
     body = await request.form()
     new_order = json.loads(body["new_order"])
     courses = get_courses()
@@ -150,6 +175,7 @@ async def update_course_order(request: Request):
 
 @app.post("/update-plan-order")
 async def update_plan_order(request: Request):
+    require_login(request)
     body = await request.form()
     course_index = int(body["course_index"])
     new_order = json.loads(body["new_order"])
