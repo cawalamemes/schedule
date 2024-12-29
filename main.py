@@ -8,6 +8,7 @@ import os
 import json
 import redis
 import uuid
+from fastapi import UploadFile
 
 app = FastAPI()
 
