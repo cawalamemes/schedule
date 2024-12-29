@@ -2,7 +2,8 @@ from fastapi import FastAPI, Form, UploadFile, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.middleware.sessions import SessionMiddleware
+from starlette_session import SessionMiddleware
+from starlette_session.backends import SecureCookieBackend
 from typing import List
 from pydantic import BaseModel
 import os
@@ -46,11 +47,11 @@ except redis.ConnectionError:
 # Admin Credentials
 admin_credentials = {"email": "admin@site.com", "password": "password"}
 
-# Secret Key for Sessions
+# Secret Key for Secure Cookie Backend
 SECRET_KEY = os.getenv("SECRET_KEY", secrets.token_hex(32))
 
-# Add Session Middleware
-app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
+# Add Session Middleware with SecureCookieBackend
+app.add_middleware(SessionMiddleware, backend=SecureCookieBackend(), secret_key=SECRET_KEY)
 
 # Models
 class Plan(BaseModel):
