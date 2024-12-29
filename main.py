@@ -2,16 +2,12 @@ from fastapi import FastAPI, Form, UploadFile, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from starlette_session import SessionMiddleware
-from starlette_session.backends import SecureCookieBackend
 from typing import List
 from pydantic import BaseModel
 import os
 import json
 import redis
-import secrets
 
-# FastAPI Application
 app = FastAPI()
 
 PORT = 9216
@@ -21,6 +17,8 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 # Redis Configuration
+
+# Configuration
 REDIS = "redis-19912.crce179.ap-south-1-1.ec2.redns.redis-cloud.com:19912"
 REDIS_PASSWORD = "2L7qgMeLou5rezLa6XU2iNIDdG1RSTUq"
 
@@ -46,14 +44,9 @@ except redis.ConnectionError:
 
 # Admin Credentials
 admin_credentials = {"email": "admin@site.com", "password": "password"}
+admin_logged_in = False
 
-# Secret Key for Secure Cookie Backend
-SECRET_KEY = os.getenv("SECRET_KEY", secrets.token_hex(32))
 
-# Add Session Middleware with SecureCookieBackend
-app.add_middleware(SessionMiddleware, backend=SecureCookieBackend(), secret_key=SECRET_KEY)
-
-# Models
 class Plan(BaseModel):
     name: str
     pdf_url: str
@@ -86,25 +79,20 @@ async def admin_login(request: Request):
 
 
 @app.post("/admin/login")
-async def admin_login_post(request: Request, email: str = Form(...), password: str = Form(...)):
+async def admin_login_post(email: str = Form(...), password: str = Form(...)):
+    global admin_logged_in
     if email == admin_credentials["email"] and password == admin_credentials["password"]:
-        request.session["admin_logged_in"] = True
+        admin_logged_in = True
         return RedirectResponse(url="/admin", status_code=303)
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard(request: Request):
-    if not request.session.get("admin_logged_in"):
+    if not admin_logged_in:
         return RedirectResponse(url="/admin/login", status_code=303)
     courses = get_courses()
     return templates.TemplateResponse("admin_dashboard.html", {"request": request, "courses": courses})
-
-
-@app.get("/admin/logout")
-async def admin_logout(request: Request):
-    request.session.clear()
-    return RedirectResponse(url="/admin/login", status_code=303)
 
 
 @app.post("/add-course")
