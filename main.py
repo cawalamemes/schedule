@@ -112,6 +112,27 @@ async def reorder_plans(request: Request):
         return RedirectResponse(url="/admin", status_code=303)
     raise HTTPException(status_code=400, detail="Invalid order")
 
+@app.post("/update-course-order")
+async def update_course_order(request: Request):
+    global courses
+    body = await request.form()
+    new_order = json.loads(body["new_order"])
+    if len(new_order) == len(courses):
+        courses = [courses[int(i)] for i in new_order]
+        return RedirectResponse(url="/admin", status_code=303)
+    raise HTTPException(status_code=400, detail="Invalid course order")
+
+
+@app.post("/update-plan-order")
+async def update_plan_order(request: Request):
+    body = await request.form()
+    course_index = int(body["course_index"])
+    new_order = json.loads(body["new_order"])
+    if 0 <= course_index < len(courses) and len(new_order) == len(courses[course_index].plans):
+        courses[course_index].plans = [courses[course_index].plans[int(i)] for i in new_order]
+        return RedirectResponse(url="/admin", status_code=303)
+    raise HTTPException(status_code=400, detail="Invalid plan order")
+
 
 if __name__ == "__main__":
     import uvicorn
