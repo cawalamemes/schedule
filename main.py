@@ -26,7 +26,7 @@ REDIS_URI = REDIS.split(":")
 host = REDIS_URI[0]
 port = int(REDIS_URI[1])
 password = REDIS_PASSWORD
-redis_client = redis.StrictRedis(host, port, db, password, decode_responses=True)
+redis_client = redis.StrictRedis(host, port, password, decode_responses=True)
 
 # Admin Credentials
 admin_credentials = {"email": "admin@site.com", "password": "password"}
