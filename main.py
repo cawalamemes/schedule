@@ -25,13 +25,13 @@ REDIS_PASSWORD = os.getenv("REDIS_PASSWORD")
 REDIS_URI = REDIS.split(":")
 host = REDIS_URI[0]
 port = int(REDIS_URI[1])
-password = REDIS_PASSWORD
+pass_word = REDIS_PASSWORD
 
 redis_client = redis.StrictRedis(
     host=host,
     port=port,
-    password=password,
-    decode_responses=True  # Ensure response strings are decoded
+    password=pass_word,
+    decode_responses=True
 )
 
 try:
