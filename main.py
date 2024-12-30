@@ -46,7 +46,6 @@ except redis.ConnectionError:
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
 
-admin_credentials = {"email": "admin@site.com", "password": "password"}
 admin_logged_in = False
 
 class Plan(BaseModel):
