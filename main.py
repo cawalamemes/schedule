@@ -10,7 +10,11 @@ import redis
 
 app = FastAPI()
 
-PORT = 9216
+# Ensure static directory exists
+if not os.path.exists("static"):
+    os.makedirs("static")
+
+PORT = 8000
 
 # Static and Template Directories
 app.mount("/static", StaticFiles(directory="static"), name="static")
