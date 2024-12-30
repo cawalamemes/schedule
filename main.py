@@ -165,7 +165,3 @@ async def update_plan_order(request: Request):
         return RedirectResponse(url="/admin", status_code=303)
     raise HTTPException(status_code=400, detail="Invalid plan order")
 
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
