@@ -5,3 +5,4 @@ redis
 pydantic
 python-multipart
 python-dotenv
+passlib
