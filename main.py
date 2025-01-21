@@ -7,6 +7,8 @@ from pydantic import BaseModel
 import os
 import json
 import redis
+from dotenv import load_dotenv
+load_dotenv()
 
 app = FastAPI()
 
