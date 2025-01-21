@@ -4,4 +4,4 @@ jinja2
 redis
 pydantic
 python-multipart
-dotenv
+python-dotenv
