@@ -147,3 +147,46 @@ async def add_plan(course_index: int = Form(...), name: str = Form(...), file: U
         save_courses(courses)
         return RedirectResponse(url="/admin", status_code=303)
     raise HTTPException(status_code=404, detail="Course not found")
+    
+@app.post("/delete-course")
+async def delete_course(course_index: int = Form(...)):
+    courses = get_courses()
+    if 0 <= course_index < len(courses):
+        courses.pop(course_index)
+        save_courses(courses)
+        return RedirectResponse(url="/admin", status_code=303)
+    raise HTTPException(status_code=404, detail="Course not found")
+
+
+@app.post("/delete-plan")
+async def delete_plan(course_index: int = Form(...), plan_index: int = Form(...)):
+    courses = get_courses()
+    if 0 <= course_index < len(courses) and 0 <= plan_index < len(courses[course_index]["plans"]):
+        courses[course_index]["plans"].pop(plan_index)
+        save_courses(courses)
+        return RedirectResponse(url="/admin", status_code=303)
+    raise HTTPException(status_code=404, detail="Plan not found")
+
+
+@app.post("/update-course-order")
+async def update_course_order(request: Request):
+    body = await request.form()
+    new_order = json.loads(body["new_order"])
+    courses = get_courses()
+    if len(new_order) == len(courses):
+        courses = [courses[int(i)] for i in new_order]
+        save_courses(courses)
+        return RedirectResponse(url="/admin", status_code=303)
+    raise HTTPException(status_code=400, detail="Invalid course order")
+
+@app.post("/update-plan-order")
+async def update_plan_order(request: Request):
+    body = await request.form()
+    course_index = int(body["course_index"])
+    new_order = json.loads(body["new_order"])
+    courses = get_courses()
+    if 0 <= course_index < len(courses) and len(new_order) == len(courses[course_index]["plans"]):
+        courses[course_index]["plans"] = [courses[course_index]["plans"][int(i)] for i in new_order]
+        save_courses(courses)
+        return RedirectResponse(url="/admin", status_code=303)
+    raise HTTPException(status_code=400, detail="Invalid plan order")
