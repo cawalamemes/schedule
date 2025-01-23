@@ -18,7 +18,8 @@ app = FastAPI()
 # Ensure static directory exists
 if not os.path.exists("static"):
     os.makedirs("static")
-
+if not os.path.exists("static/pdfs"):
+    os.makedirs("static/pdfs")
 PORT = 8000
 
 # Static and Template Directories
