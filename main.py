@@ -10,6 +10,10 @@ import json
 import redis
 from dotenv import load_dotenv
 from uuid import uuid4
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.status import HTTP_404_NOT_FOUND
+
 
 load_dotenv()
 
@@ -191,3 +195,19 @@ async def update_plan_order(request: Request):
         save_courses(courses)
         return RedirectResponse(url="/admin", status_code=303)
     raise HTTPException(status_code=400, detail="Invalid plan order")
+
+# Custom HTTP Exception Handler
+@app.exception_handler(StarletteHTTPException)
+async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException):
+    if exc.status_code == HTTP_404_NOT_FOUND:
+        # Pass error details to the template
+        return templates.TemplateResponse(
+            "404.html",
+            {
+                "request": request,
+                "status_code": exc.status_code,
+                "error_message": exc.detail or "Page not found",
+            },
+            status_code=exc.status_code,
+        )
+    return HTMLResponse(content=str(exc.detail), status_code=exc.status_code)
