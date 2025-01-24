@@ -43,7 +43,8 @@ redis_client = redis.StrictRedis(
     host=host,
     port=port,
     password=pass_word,
-    decode_responses=True
+    decode_responses=True,
+    ssl=True
 )
 
 try:
