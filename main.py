@@ -68,21 +68,36 @@ ADMIN_PASSWORD_HASH = pwd_context.hash(os.getenv("ADMIN_PASSWORD"))
 
 # Helper Functions
 def get_courses():
-    courses_json = redis_client.get("courses")
-    return json.loads(courses_json) if courses_json else []
+    try:
+        courses_json = redis_client.get("courses")
+        return json.loads(courses_json) if courses_json else []
+    except Exception as e:
+        logger.error(f"Error fetching courses: {e}")
+        return []
 
 def save_courses(courses):
-    redis_client.set("courses", json.dumps(courses, default=lambda o: o.dict()))
+    try:
+        redis_client.set("courses", json.dumps(courses, default=lambda o: o.dict()))
+    except Exception as e:
+        logger.error(f"Error saving courses: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save courses.")
 
 def create_session():
     session_id = str(uuid4())
-    redis_client.setex(f"session:{session_id}", 3600, "logged_in")
+    try:
+        redis_client.setex(f"session:{session_id}", 3600, "logged_in")
+    except Exception as e:
+        logger.error(f"Error creating session: {e}")
     return session_id
 
 def is_logged_in(session_id: Optional[str]) -> bool:
-    if not session_id:
+    try:
+        if not session_id:
+            return False
+        return redis_client.get(f"session:{session_id}") == "logged_in"
+    except Exception as e:
+        logger.error(f"Error checking session: {e}")
         return False
-    return redis_client.get(f"session:{session_id}") == "logged_in"
 
 @app.get("/", response_class=HTMLResponse)
 async def user_dashboard(request: Request):
@@ -138,17 +153,25 @@ async def add_course(title: str = Form(...)):
 
 @app.post("/add-plan")
 async def add_plan(course_index: int = Form(...), name: str = Form(...), file: UploadFile = None):
+    if file.content_type != "application/pdf":
+        raise HTTPException(status_code=400, detail="Invalid file type. Only PDFs are allowed.")
+    if file.size > 10 * 1024 * 1024:  # Limit file size to 5MB
+        raise HTTPException(status_code=400, detail="File size exceeds the 5MB limit.")
+
     courses = get_courses()
     if 0 <= course_index < len(courses):
-        pdf_path = f"static/pdfs/{file.filename}"
-        with open(pdf_path, "wb") as f:
-            f.write(file.file.read())
-        courses[course_index]["plans"].append({"name": name, "pdf_url": f"/{pdf_path}"})
-        save_courses(courses)
-        logger.info(f"Added plan '{name}' to course index {course_index}")
+        try:
+            pdf_path = f"static/pdfs/{file.filename}"
+            with open(pdf_path, "wb") as f:
+                f.write(file.file.read())
+            courses[course_index]["plans"].append({"name": name, "pdf_url": f"/{pdf_path}"})
+            save_courses(courses)
+        except Exception as e:
+            logger.error(f"Error adding plan: {e}")
+            raise HTTPException(status_code=500, detail="Failed to add plan.")
         return RedirectResponse(url="/admin", status_code=303)
-    raise HTTPException(status_code=404, detail="Course not found")
-
+    raise HTTPException(status_code=404, detail="Course not found.")
+    
 @app.post("/delete-plan")
 async def delete_plan(course_index: int = Form(...), plan_index: int = Form(...)):
     courses = get_courses()
@@ -220,3 +243,7 @@ async def download_logs():
         logger.info("Log file created.")
     return FileResponse(LOG_FILE, media_type="text/plain", filename="logs.txt")
             
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled exception: {exc}")
+    return HTMLResponse(content="An unexpected error occurred.", status_code=500)
