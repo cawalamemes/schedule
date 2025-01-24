@@ -171,31 +171,27 @@ async def add_plan(course_index: int = Form(...), name: str = Form(...), file: U
             raise HTTPException(status_code=500, detail="Failed to add plan.")
         return RedirectResponse(url="/admin", status_code=303)
     raise HTTPException(status_code=404, detail="Course not found.")
-    
+
+
+@app.post("/delete-course")
+async def delete_course(course_index: int = Form(...)):
+    courses = get_courses()
+    if 0 <= course_index < len(courses):
+        courses.pop(course_index)
+        save_courses(courses)
+        return RedirectResponse(url="/admin", status_code=303)
+    raise HTTPException(status_code=404, detail="Course not found")
+
+
 @app.post("/delete-plan")
 async def delete_plan(course_index: int = Form(...), plan_index: int = Form(...)):
     courses = get_courses()
     if 0 <= course_index < len(courses) and 0 <= plan_index < len(courses[course_index]["plans"]):
-        try:
-            plan = courses[course_index]["plans"][plan_index]
-            pdf_url = plan.get("pdf_url", "")
-            pdf_path = pdf_url.lstrip("/")
+        courses[course_index]["plans"].pop(plan_index)
+        save_courses(courses)
+        return RedirectResponse(url="/admin", status_code=303)
+    raise HTTPException(status_code=404, detail="Plan not found")
 
-            if os.path.exists(pdf_path):
-                os.remove(pdf_path)
-                logger.info(f"Deleted PDF file: {pdf_path}")
-            else:
-                logger.warning(f"File not found: {pdf_path}. Removing plan details only.")
-
-            courses[course_index]["plans"].pop(plan_index)
-            save_courses(courses)
-            return RedirectResponse(url="/admin", status_code=303)
-
-        except Exception as e:
-            logger.error(f"Error deleting plan: {e}")
-            raise HTTPException(status_code=500, detail="Failed to delete the plan.")
-
-    raise HTTPException(status_code=404, detail="Plan not found.")
 
 @app.post("/update-course-order")
 async def update_course_order(request: Request):
