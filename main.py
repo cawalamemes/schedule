@@ -1,30 +1,38 @@
 from fastapi import FastAPI, Form, UploadFile, Request, Depends, HTTPException, Cookie
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
-from typing import List, Optional
 from passlib.context import CryptContext
+from typing import Optional
 import os
 import json
 import redis
 from dotenv import load_dotenv
 from uuid import uuid4
-from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.status import HTTP_404_NOT_FOUND
+import logging
 
-
+# Load environment variables
 load_dotenv()
 
+# Initialize FastAPI
 app = FastAPI()
 
-# Ensure static directory exists
+# Ensure static directories exist
 if not os.path.exists("static"):
     os.makedirs("static")
 if not os.path.exists("static/pdfs"):
     os.makedirs("static/pdfs")
-PORT = 8000
+
+# Logging configuration
+LOG_FILE = "logs.txt"
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 # Static and Template Directories
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -34,26 +42,22 @@ templates = Jinja2Templates(directory="templates")
 REDIS = os.getenv("REDIS_URI")
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD")
 
-REDIS_URI = REDIS.split(":")
-host = REDIS_URI[0]
-port = int(REDIS_URI[1])
-pass_word = REDIS_PASSWORD
-
+host, port = REDIS.split(":")
 redis_client = redis.StrictRedis(
     host=host,
-    port=port,
-    password=pass_word,
+    port=int(port),
+    password=REDIS_PASSWORD,
     decode_responses=True,
-    ssl=True
+    ssl=True,
 )
 
 try:
     redis_client.ping()
-    print("Connected to Redis!")
+    logger.info("Connected to Redis!")
 except redis.AuthenticationError:
-    print("Authentication failed: Check your password")
+    logger.error("Authentication failed: Check your password")
 except redis.ConnectionError:
-    print("Connection error: Check your host and port")
+    logger.error("Connection error: Check your host and port")
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -62,39 +66,32 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")
 ADMIN_PASSWORD_HASH = pwd_context.hash(os.getenv("ADMIN_PASSWORD"))
 
-
 # Helper Functions
 def get_courses():
     courses_json = redis_client.get("courses")
     return json.loads(courses_json) if courses_json else []
 
-
 def save_courses(courses):
     redis_client.set("courses", json.dumps(courses, default=lambda o: o.dict()))
-
 
 def create_session():
     session_id = str(uuid4())
     redis_client.setex(f"session:{session_id}", 3600, "logged_in")
     return session_id
 
-
 def is_logged_in(session_id: Optional[str]) -> bool:
     if not session_id:
         return False
     return redis_client.get(f"session:{session_id}") == "logged_in"
-
 
 @app.get("/", response_class=HTMLResponse)
 async def user_dashboard(request: Request):
     courses = get_courses()
     return templates.TemplateResponse("user_dashboard.html", {"request": request, "courses": courses})
 
-
 @app.get("/admin/login", response_class=HTMLResponse)
 async def admin_login(request: Request):
     return templates.TemplateResponse("admin_login.html", {"request": request})
-
 
 @app.post("/admin/login")
 async def admin_login_post(
@@ -108,7 +105,6 @@ async def admin_login_post(
         response.set_cookie(key="session_id", value=session_id, httponly=True, secure=True)
         return response
     raise HTTPException(status_code=401, detail="Invalid credentials")
-
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard(
@@ -126,10 +122,8 @@ async def admin_logout(
     session_id: Optional[str] = Cookie(None)
 ):
     if session_id:
-        # Remove session from Redis
         redis_client.delete(f"session:{session_id}")
-        print(f"Session {session_id} deleted.")
-    # Clear the session cookie
+        logger.info(f"Session {session_id} deleted.")
     response = RedirectResponse(url="/admin/login", status_code=303)
     response.delete_cookie(key="session_id")
     return response
@@ -139,8 +133,8 @@ async def add_course(title: str = Form(...)):
     courses = get_courses()
     courses.append({"title": title, "plans": []})
     save_courses(courses)
+    logger.info(f"Added course: {title}")
     return RedirectResponse(url="/admin", status_code=303)
-
 
 @app.post("/add-plan")
 async def add_plan(course_index: int = Form(...), name: str = Form(...), file: UploadFile = None):
@@ -151,28 +145,34 @@ async def add_plan(course_index: int = Form(...), name: str = Form(...), file: U
             f.write(file.file.read())
         courses[course_index]["plans"].append({"name": name, "pdf_url": f"/{pdf_path}"})
         save_courses(courses)
+        logger.info(f"Added plan '{name}' to course index {course_index}")
         return RedirectResponse(url="/admin", status_code=303)
     raise HTTPException(status_code=404, detail="Course not found")
-    
-@app.post("/delete-course")
-async def delete_course(course_index: int = Form(...)):
-    courses = get_courses()
-    if 0 <= course_index < len(courses):
-        courses.pop(course_index)
-        save_courses(courses)
-        return RedirectResponse(url="/admin", status_code=303)
-    raise HTTPException(status_code=404, detail="Course not found")
-
 
 @app.post("/delete-plan")
 async def delete_plan(course_index: int = Form(...), plan_index: int = Form(...)):
     courses = get_courses()
     if 0 <= course_index < len(courses) and 0 <= plan_index < len(courses[course_index]["plans"]):
-        courses[course_index]["plans"].pop(plan_index)
-        save_courses(courses)
-        return RedirectResponse(url="/admin", status_code=303)
-    raise HTTPException(status_code=404, detail="Plan not found")
+        try:
+            plan = courses[course_index]["plans"][plan_index]
+            pdf_url = plan.get("pdf_url", "")
+            pdf_path = pdf_url.lstrip("/")
 
+            if os.path.exists(pdf_path):
+                os.remove(pdf_path)
+                logger.info(f"Deleted PDF file: {pdf_path}")
+            else:
+                logger.warning(f"File not found: {pdf_path}. Removing plan details only.")
+
+            courses[course_index]["plans"].pop(plan_index)
+            save_courses(courses)
+            return RedirectResponse(url="/admin", status_code=303)
+
+        except Exception as e:
+            logger.error(f"Error deleting plan: {e}")
+            raise HTTPException(status_code=500, detail="Failed to delete the plan.")
+
+    raise HTTPException(status_code=404, detail="Plan not found.")
 
 @app.post("/update-course-order")
 async def update_course_order(request: Request):
@@ -197,7 +197,6 @@ async def update_plan_order(request: Request):
         return RedirectResponse(url="/admin", status_code=303)
     raise HTTPException(status_code=400, detail="Invalid plan order")
 
-# Custom HTTP Exception Handler
 @app.exception_handler(StarletteHTTPException)
 async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException):
     if exc.status_code == HTTP_404_NOT_FOUND:
@@ -212,3 +211,12 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
             status_code=exc.status_code,
         )
     return HTMLResponse(content=str(exc.detail), status_code=exc.status_code)
+
+@app.get("/logs", response_class=FileResponse)
+async def download_logs():
+    if not os.path.exists(LOG_FILE):
+        with open(LOG_FILE, "w") as f:
+            f.write("Log file created.\n")
+        logger.info("Log file created.")
+    return FileResponse(LOG_FILE, media_type="text/plain", filename="logs.txt")
+            
