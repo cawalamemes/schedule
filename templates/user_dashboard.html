@@ -175,7 +175,7 @@
                         <div class="plan">
                             <p>{{ plan.name }}</p>
                             <div class="plan-buttons">
-                                <a href="/download-pdf?file_path={{ plan.pdf_url.split('/')[-1] | urlencode }}" style="text-decoration: none;">
+                                <a href="/download-pdf?file_path={{ plan.pdf_url | urlencode }}" style="text-decoration: none;">
                                     <button class="btn-download">
                                         <i class="fas fa-file-pdf"></i> Download PDF
                                     </button>
