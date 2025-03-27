@@ -250,12 +250,17 @@ async def global_exception_handler(request: Request, exc: Exception):
 @app.get("/download-pdf")
 async def download_pdf(file_path: str = Query(...)):
     try:
-        # Decode URL-encoded filename (handles spaces and special characters)
-        filename = os.path.basename(unquote(file_path))
-
-        # Construct the correct file path
-        pdf_path = os.path.join("static", "pdfs", filename)
-
+        # Decode URL-encoded filename
+        filename = unquote(file_path)
+        # Ensure filename is safe and extract basename
+        filename = os.path.basename(filename)
+        if not filename:
+            raise HTTPException(status_code=400, detail="Invalid filename")
+        
+        # Construct the correct absolute file path
+        pdf_dir = os.path.abspath(os.path.join("static", "pdfs"))
+        pdf_path = os.path.join(pdf_dir, filename)
+        
         # Ensure file exists
         if not os.path.exists(pdf_path):
             logger.error(f"File not found: {pdf_path}")
