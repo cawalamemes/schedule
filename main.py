@@ -12,6 +12,7 @@ from uuid import uuid4
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.status import HTTP_404_NOT_FOUND
 import logging
+from urllib.parse import unquote
 
 # Load environment variables
 load_dotenv()
@@ -243,3 +244,24 @@ async def download_logs():
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception: {exc}")
     return HTMLResponse(content="An unexpected error occurred.", status_code=500)
+
+@app.get("/download-pdf")
+async def download_pdf(file: str):
+    try:
+        if not file or '/' in file or '..' in file:
+            raise HTTPException(status_code=400, detail="Invalid filename")
+        pdf_path = os.path.join("static", "pdfs", unquote(file))
+        
+        if not os.path.exists(pdf_path):
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        return FileResponse(
+            pdf_path,
+            media_type="application/pdf",
+            filename=file,
+            headers={"Content-Disposition": f"attachment; filename={file}"}
+        )
+    except Exception as e:
+        logger.error(f"PDF download error: {e}")
+        raise HTTPException(status_code=500, detail="Download failed")
+                                        
