@@ -7,6 +7,7 @@ from typing import Optional
 import os
 import json
 import redis
+from fastapi import Query
 from dotenv import load_dotenv
 from uuid import uuid4
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -246,24 +247,20 @@ async def global_exception_handler(request: Request, exc: Exception):
     return HTMLResponse(content="An unexpected error occurred.", status_code=500)
 
 
-
 @app.get("/download-pdf")
-async def download_pdf(file_path: str):  # Changed parameter name
+async def download_pdf(file_path: str = Query(...)):  # Use Query to enforce a required param
     try:
-        # Decode and sanitize the path
-        decoded_path = unquote(file_path)
-        filename = os.path.basename(decoded_path)  # Extract just the filename
-        
-        # Security checks
-        if not filename or '/' in filename or '..' in filename:
-            raise HTTPException(status_code=400, detail="Invalid filename")
-        
-        # Full path construction
+        # Extract only the filename to prevent directory traversal
+        filename = os.path.basename(file_path)
+
+        # Construct the full path safely
         pdf_path = os.path.join("static", "pdfs", filename)
-        
+
+        # Ensure file exists
         if not os.path.exists(pdf_path):
+            logger.error(f"File not found: {pdf_path}")
             raise HTTPException(status_code=404, detail="File not found")
-        
+
         return FileResponse(
             pdf_path,
             media_type="application/pdf",
