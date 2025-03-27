@@ -245,12 +245,21 @@ async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception: {exc}")
     return HTMLResponse(content="An unexpected error occurred.", status_code=500)
 
+
+
 @app.get("/download-pdf")
-async def download_pdf(file: str):
+async def download_pdf(file_path: str):  # Changed parameter name
     try:
-        if not file or '/' in file or '..' in file:
+        # Decode and sanitize the path
+        decoded_path = unquote(file_path)
+        filename = os.path.basename(decoded_path)  # Extract just the filename
+        
+        # Security checks
+        if not filename or '/' in filename or '..' in filename:
             raise HTTPException(status_code=400, detail="Invalid filename")
-        pdf_path = os.path.join("static", "pdfs", unquote(file))
+        
+        # Full path construction
+        pdf_path = os.path.join("static", "pdfs", filename)
         
         if not os.path.exists(pdf_path):
             raise HTTPException(status_code=404, detail="File not found")
@@ -258,10 +267,8 @@ async def download_pdf(file: str):
         return FileResponse(
             pdf_path,
             media_type="application/pdf",
-            filename=file,
-            headers={"Content-Disposition": f"attachment; filename={file}"}
+            filename=filename
         )
     except Exception as e:
-        logger.error(f"PDF download error: {e}")
+        logger.error(f"Download error: {str(e)}")
         raise HTTPException(status_code=500, detail="Download failed")
-                                        
