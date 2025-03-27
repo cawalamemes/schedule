@@ -248,12 +248,12 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 
 @app.get("/download-pdf")
-async def download_pdf(file_path: str = Query(...)):  # Use Query to enforce a required param
+async def download_pdf(file_path: str = Query(...)):
     try:
-        # Extract only the filename to prevent directory traversal
-        filename = os.path.basename(file_path)
+        # Decode URL-encoded filename (handles spaces and special characters)
+        filename = os.path.basename(unquote(file_path))
 
-        # Construct the full path safely
+        # Construct the correct file path
         pdf_path = os.path.join("static", "pdfs", filename)
 
         # Ensure file exists
