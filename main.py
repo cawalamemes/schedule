@@ -7,25 +7,22 @@ from typing import Optional
 import os
 import json
 import redis
+import re
+import uuid
 from dotenv import load_dotenv
-from uuid import uuid4
+from pathlib import Path
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.status import HTTP_404_NOT_FOUND
 import logging
 
-# Load environment variables
 load_dotenv()
 
-# Initialize FastAPI
 app = FastAPI()
 
-# Ensure static directories exist
-if not os.path.exists("static"):
-    os.makedirs("static")
-if not os.path.exists("static/pdfs"):
-    os.makedirs("static/pdfs")
+static_dir = os.path.abspath("static")
+pdfs_dir = os.path.join(static_dir, "pdfs")
+os.makedirs(pdfs_dir, exist_ok=True)
 
-# Logging configuration
 LOG_FILE = "logs.txt"
 logging.basicConfig(
     filename=LOG_FILE,
@@ -34,11 +31,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Static and Template Directories
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 templates = Jinja2Templates(directory="templates")
 
-# Redis Configuration
 REDIS = os.getenv("REDIS_URI")
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD")
 
@@ -55,18 +50,26 @@ try:
     redis_client.ping()
     logger.info("Connected to Redis!")
 except redis.AuthenticationError:
-    logger.error("Authentication failed: Check your password")
+    logger.error("Authentication failed")
 except redis.ConnectionError:
-    logger.error("Connection error: Check your host and port")
+    logger.error("Connection error")
 
-# Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# Admin Credentials
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")
 ADMIN_PASSWORD_HASH = pwd_context.hash(os.getenv("ADMIN_PASSWORD"))
 
-# Helper Functions
+def sanitize_filename(filename: str) -> str:
+    path = Path(filename)
+    stem = path.stem
+    extension = path.suffix.lower()
+    stem = re.sub(r'[^a-zA-Z0-9_-]', '', stem.replace(' ', '_'))
+    stem = re.sub(r'_+', '_', stem).strip('_')
+    if not stem:
+        stem = "file"
+    unique_id = uuid.uuid4().hex[:6]
+    return f"{stem}_{unique_id}{extension}"
+
 def get_courses():
     try:
         courses_json = redis_client.get("courses")
@@ -83,7 +86,7 @@ def save_courses(courses):
         raise HTTPException(status_code=500, detail="Failed to save courses.")
 
 def create_session():
-    session_id = str(uuid4())
+    session_id = str(uuid.uuid4())
     try:
         redis_client.setex(f"session:{session_id}", 3600, "logged_in")
     except Exception as e:
@@ -109,11 +112,7 @@ async def admin_login(request: Request):
     return templates.TemplateResponse("admin_login.html", {"request": request})
 
 @app.post("/admin/login")
-async def admin_login_post(
-    response: RedirectResponse,
-    email: str = Form(...),
-    password: str = Form(...)
-):
+async def admin_login_post(response: RedirectResponse, email: str = Form(...), password: str = Form(...)):
     if email == ADMIN_EMAIL and pwd_context.verify(password, ADMIN_PASSWORD_HASH):
         session_id = create_session()
         response = RedirectResponse(url="/admin", status_code=303)
@@ -122,23 +121,16 @@ async def admin_login_post(
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
 @app.get("/admin", response_class=HTMLResponse)
-async def admin_dashboard(
-    request: Request,
-    session_id: Optional[str] = Cookie(None)
-):
+async def admin_dashboard(request: Request, session_id: Optional[str] = Cookie(None)):
     if not is_logged_in(session_id):
         return RedirectResponse(url="/admin/login", status_code=303)
     courses = get_courses()
     return templates.TemplateResponse("admin_dashboard.html", {"request": request, "courses": courses})
 
 @app.get("/logout")
-async def admin_logout(
-    response: RedirectResponse,
-    session_id: Optional[str] = Cookie(None)
-):
+async def admin_logout(response: RedirectResponse, session_id: Optional[str] = Cookie(None)):
     if session_id:
         redis_client.delete(f"session:{session_id}")
-        logger.info(f"Session {session_id} deleted.")
     response = RedirectResponse(url="/admin/login", status_code=303)
     response.delete_cookie(key="session_id")
     return response
@@ -148,30 +140,40 @@ async def add_course(title: str = Form(...)):
     courses = get_courses()
     courses.append({"title": title, "plans": []})
     save_courses(courses)
-    logger.info(f"Added course: {title}")
     return RedirectResponse(url="/admin", status_code=303)
 
 @app.post("/add-plan")
 async def add_plan(course_index: int = Form(...), name: str = Form(...), file: UploadFile = None):
     if file.content_type != "application/pdf":
-        raise HTTPException(status_code=400, detail="Invalid file type. Only PDFs are allowed.")
-    if file.size > 10 * 1024 * 1024:  # Limit file size to 5MB
-        raise HTTPException(status_code=400, detail="File size exceeds the 5MB limit.")
+        raise HTTPException(status_code=400, detail="Invalid file type")
+    if file.size > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File size exceeds limit")
 
     courses = get_courses()
     if 0 <= course_index < len(courses):
         try:
-            pdf_path = f"static/pdfs/{file.filename}"
+            filename = sanitize_filename(file.filename)
+            pdf_path = os.path.join(pdfs_dir, filename)
             with open(pdf_path, "wb") as f:
-                f.write(file.file.read())
-            courses[course_index]["plans"].append({"name": name, "pdf_url": f"/{pdf_path}"})
+                f.write(await file.read())
+            courses[course_index]["plans"].append({"name": name, "filename": filename})
             save_courses(courses)
         except Exception as e:
             logger.error(f"Error adding plan: {e}")
-            raise HTTPException(status_code=500, detail="Failed to add plan.")
+            raise HTTPException(status_code=500, detail="Failed to add plan")
         return RedirectResponse(url="/admin", status_code=303)
-    raise HTTPException(status_code=404, detail="Course not found.")
+    raise HTTPException(status_code=404, detail="Course not found")
 
+@app.get("/download/{filename}")
+async def download_pdf(filename: str):
+    pdf_path = os.path.join(pdfs_dir, filename)
+    if not os.path.isfile(pdf_path):
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(
+        pdf_path,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
 
 @app.post("/delete-course")
 async def delete_course(course_index: int = Form(...)):
@@ -182,7 +184,6 @@ async def delete_course(course_index: int = Form(...)):
         return RedirectResponse(url="/admin", status_code=303)
     raise HTTPException(status_code=404, detail="Course not found")
 
-
 @app.post("/delete-plan")
 async def delete_plan(course_index: int = Form(...), plan_index: int = Form(...)):
     courses = get_courses()
@@ -191,7 +192,6 @@ async def delete_plan(course_index: int = Form(...), plan_index: int = Form(...)
         save_courses(courses)
         return RedirectResponse(url="/admin", status_code=303)
     raise HTTPException(status_code=404, detail="Plan not found")
-
 
 @app.post("/update-course-order")
 async def update_course_order(request: Request):
@@ -219,7 +219,6 @@ async def update_plan_order(request: Request):
 @app.exception_handler(StarletteHTTPException)
 async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException):
     if exc.status_code == HTTP_404_NOT_FOUND:
-        # Pass error details to the template
         return templates.TemplateResponse(
             "404.html",
             {
@@ -236,10 +235,9 @@ async def download_logs():
     if not os.path.exists(LOG_FILE):
         with open(LOG_FILE, "w") as f:
             f.write("Log file created.\n")
-        logger.info("Log file created.")
     return FileResponse(LOG_FILE, media_type="text/plain", filename="logs.txt")
             
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception: {exc}")
-    return HTMLResponse(content="An unexpected error occurred.", status_code=500)
+    return HTMLResponse(content="An unexpected error occurred", status_code=500)
