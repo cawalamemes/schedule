@@ -4,23 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CS Test Series Schedule</title>
-    <!-- Font Awesome CDN -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
     <style>
-        /* General Reset */
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-
         body {
             font-family: 'Arial', sans-serif;
             line-height: 1.6;
             background-color: #f8f8f8;
             color: #333;
         }
-
         .header {
             display: flex;
             justify-content: space-between;
@@ -29,46 +25,37 @@
             background-color: #e63e58;
             color: white;
         }
-
         .logo {
             font-size: 1.1rem;
             font-weight: bold;
         }
-
         .cart {
             display: flex;
             align-items: center;
             font-size: 0.9rem;
         }
-
         .cart span {
             margin-right: 0.5rem;
             font-size: 1rem;
         }
-
         main {
             padding: 1rem;
         }
-
         .test-series h1,
         .test-series h2 {
             text-align: center;
             color: #333;
             margin-bottom: 1rem;
         }
-
         .test-series h1 {
             font-size: 1.3rem;
         }
-
         .test-series h2 {
             font-size: 0.9rem;
         }
-
         .test-series span {
             color: #e63e58;
         }
-
         .plans {
             display: flex;
             flex-wrap: wrap;
@@ -76,7 +63,6 @@
             justify-content: center;
             margin-top: 1rem;
         }
-
         .plan {
             background-color: white;
             padding: 1rem;
@@ -87,24 +73,20 @@
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
             transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
         }
-
         .plan:hover {
             transform: translateY(-5px);
             box-shadow: 0 6px 10px rgba(0, 0, 0, 0.15);
         }
-
         .plan h3 {
             margin-bottom: 0.5rem;
             font-size: 0.9rem;
             color: #e63e58;
         }
-
         .plan-buttons {
             display: flex;
             justify-content: space-between;
             margin-top: 0.8rem;
         }
-
         .plan button {
             padding: 0.4rem 0.8rem;
             font-size: 0.8rem;
@@ -119,36 +101,29 @@
             justify-content: center;
             gap: 0.3rem;
         }
-
         .btn-download {
             background-color: #e63e58;
             color: white;
         }
-
         .btn-download:hover {
             background-color: #d1354d;
         }
-
         .btn-view {
             background-color: #f8f8f8;
             border: 1px solid #e63e58;
             color: #e63e58;
         }
-
         .btn-view:hover {
             background-color: #e63e58;
             color: white;
         }
-
         @media (max-width: 768px) {
             .plan {
                 width: 100%;
             }
-
             .plan-buttons {
                 flex-wrap: wrap;
             }
-
             .plan button {
                 flex: unset;
                 margin: 4px 0;
@@ -164,7 +139,6 @@
             <i class="cart-icon">🛒</i>
         </div>
     </header>
-
     <main>
         <section class="test-series">
             <h1>Mission CS Test Series Schedule</h1>
@@ -175,14 +149,16 @@
                         <div class="plan">
                             <p>{{ plan.name }}</p>
                             <div class="plan-buttons">
-                                <a href="{{ plan.pdf_url }}" style="text-decoration: none;">
+                                <a href="/download/{{ plan.filename }}" style="text-decoration: none;">
                                     <button class="btn-download">
                                         <i class="fas fa-file-pdf"></i> Download PDF
                                     </button>
                                 </a>
-                               <a href="https://missioncstestseries.com/auth?auth=login" style="text-decoration: none;"> <button class="btn-view">
-                                    <i class="fa fa-sign-in"></i> Enroll Now
-                                </button> </a>
+                                <a href="https://missioncstestseries.com/auth?auth=login" style="text-decoration: none;">
+                                    <button class="btn-view">
+                                        <i class="fa fa-sign-in"></i> Enroll Now
+                                    </button>
+                                </a>
                             </div>
                         </div>
                     {% endfor %}
@@ -191,4 +167,4 @@
         </section>
     </main>
 </body>
-</html>
+        </html>
