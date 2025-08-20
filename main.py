@@ -25,103 +25,6 @@ load_dotenv()
 # Add this to handle health checks
 app = FastAPI(title="Course Management System")
 
-# Add health check endpoints
-@app.get("/kaithhealthcheck")
-@app.get("/kaithheathcheck")
-async def health_check():
-    return {"status": "healthy"}
-
-# Debug endpoint
-@app.get("/debug-config")
-async def debug_config():
-    return {
-        "s3_bucket": os.getenv("S3_BUCKET"),
-        "s3_endpoint": "https://objstorage.leapcell.io",
-        "redis_host": os.getenv("REDIS_URI"),
-        "temp_dir": "/tmp",
-        "temp_dir_exists": os.path.exists("/tmp"),
-        "temp_dir_writable": os.access("/tmp", os.W_OK),
-    }
-
-# Test S3 connectivity
-@app.get("/test-s3")
-async def test_s3():
-    try:
-        response = s3.list_objects_v2(Bucket=S3_BUCKET, MaxKeys=100)
-        files = []
-        if 'Contents' in response:
-            files = [obj['Key'] for obj in response['Contents']]
-        return {
-            "status": "S3 connection successful", 
-            "bucket": S3_BUCKET,
-            "files": files[:10],  # Show first 10 files
-            "total_files": len(files)
-        }
-    except Exception as e:
-        logger.error(f"S3 test failed: {str(e)}")
-        return {"status": "S3 connection failed", "error": str(e), "bucket": S3_BUCKET}
-
-# List all courses and their files
-@app.get("/debug-courses")
-async def debug_courses():
-    try:
-        courses = get_courses()
-        s3_files = []
-        try:
-            response = s3.list_objects_v2(Bucket=S3_BUCKET)
-            if 'Contents' in response:
-                s3_files = [obj['Key'] for obj in response['Contents']]
-        except Exception as e:
-            logger.error(f"Error listing S3 files: {e}")
-            
-        return {
-            "courses": courses,
-            "s3_files": s3_files,
-            "s3_file_count": len(s3_files),
-            "bucket": S3_BUCKET
-        }
-    except Exception as e:
-        logger.error(f"Debug courses failed: {str(e)}")
-        return {"error": str(e)}
-
-# Test simple file upload
-@app.get("/test-upload")
-async def test_upload():
-    try:
-        # Create a small test file
-        test_filename = "test_file_" + uuid.uuid4().hex[:6] + ".txt"
-        test_content = "This is a test file for upload testing."
-        temp_path = os.path.join("/tmp", test_filename)
-        
-        # Write test file
-        with open(temp_path, "w") as f:
-            f.write(test_content)
-        
-        logger.info(f"Created test file: {temp_path}")
-        
-        # Upload to S3
-        logger.info(f"Uploading test file to S3: {S3_BUCKET}/{test_filename}")
-        s3.upload_file(temp_path, S3_BUCKET, test_filename)
-        logger.info("Test file uploaded successfully")
-        
-        # Verify upload
-        try:
-            s3.head_object(Bucket=S3_BUCKET, Key=test_filename)
-            logger.info("Test file verified in S3")
-        except Exception as verify_error:
-            logger.error(f"Failed to verify test file: {verify_error}")
-        
-        # Clean up local file
-        os.remove(temp_path)
-        logger.info("Cleaned up local test file")
-        
-        return {"status": "success", "filename": test_filename, "content": test_content}
-        
-    except Exception as e:
-        logger.error(f"Test upload failed: {str(e)}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        return {"status": "error", "message": str(e)}
-
 # Configure S3 client
 s3 = boto3.client(
     "s3",
@@ -260,17 +163,6 @@ def download_from_s3(s3_key: str, local_path: str):
     try:
         logger.info(f"Starting S3 download: {S3_BUCKET}/{s3_key} -> {local_path}")
         
-        # List all objects to debug
-        try:
-            response = s3.list_objects_v2(Bucket=S3_BUCKET)
-            if 'Contents' in response:
-                s3_files = [obj['Key'] for obj in response['Contents']]
-                logger.info(f"S3 files in bucket: {s3_files}")
-            else:
-                logger.info("No files found in S3 bucket")
-        except Exception as list_error:
-            logger.error(f"Error listing S3 files: {list_error}")
-        
         # Check if object exists first
         try:
             response = s3.head_object(Bucket=S3_BUCKET, Key=s3_key)
@@ -280,10 +172,11 @@ def download_from_s3(s3_key: str, local_path: str):
             # List available files for debugging
             try:
                 response = s3.list_objects_v2(Bucket=S3_BUCKET)
+                available_files = []
                 if 'Contents' in response:
                     available_files = [obj['Key'] for obj in response['Contents']]
-                    logger.info(f"Available files in bucket: {available_files}")
-                raise Exception(f"File '{s3_key}' not found in storage. Available files: {len(available_files) if 'Contents' in response else 0}")
+                logger.info(f"Available files in bucket: {available_files}")
+                raise Exception(f"File '{s3_key}' not found in storage. Available files: {len(available_files)}")
             except Exception as list_error:
                 logger.error(f"Error listing available files: {list_error}")
                 raise Exception(f"File '{s3_key}' not found in storage")
@@ -301,6 +194,9 @@ def download_from_s3(s3_key: str, local_path: str):
             
         file_size = os.path.getsize(local_path)
         logger.info(f"Downloaded file size: {file_size} bytes")
+        
+        if file_size == 0:
+            raise Exception(f"Downloaded file is empty: {local_path}")
         
     except Exception as e:
         logger.error(f"Error downloading from S3 key {s3_key}: {str(e)}")
@@ -324,6 +220,65 @@ def delete_from_s3(s3_key: str):
     except Exception as e:
         logger.error(f"Error deleting from S3: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete file from storage.")
+
+# Add health check endpoints
+@app.get("/kaithhealthcheck")
+@app.get("/kaithheathcheck")
+async def health_check():
+    return {"status": "healthy"}
+
+# Debug endpoint
+@app.get("/debug-config")
+async def debug_config():
+    return {
+        "s3_bucket": os.getenv("S3_BUCKET"),
+        "s3_endpoint": "https://objstorage.leapcell.io",
+        "redis_host": os.getenv("REDIS_URI"),
+        "temp_dir": "/tmp",
+        "temp_dir_exists": os.path.exists("/tmp"),
+        "temp_dir_writable": os.access("/tmp", os.W_OK),
+    }
+
+# Test S3 connectivity
+@app.get("/test-s3")
+async def test_s3():
+    try:
+        response = s3.list_objects_v2(Bucket=S3_BUCKET, MaxKeys=100)
+        files = []
+        if 'Contents' in response:
+            files = [obj['Key'] for obj in response['Contents']]
+        return {
+            "status": "S3 connection successful", 
+            "bucket": S3_BUCKET,
+            "files": files[:10],  # Show first 10 files
+            "total_files": len(files)
+        }
+    except Exception as e:
+        logger.error(f"S3 test failed: {str(e)}")
+        return {"status": "S3 connection failed", "error": str(e), "bucket": S3_BUCKET}
+
+# List all courses and their files
+@app.get("/debug-courses")
+async def debug_courses():
+    try:
+        courses = get_courses()
+        s3_files = []
+        try:
+            response = s3.list_objects_v2(Bucket=S3_BUCKET)
+            if 'Contents' in response:
+                s3_files = [obj['Key'] for obj in response['Contents']]
+        except Exception as e:
+            logger.error(f"Error listing S3 files: {e}")
+            
+        return {
+            "courses": courses,
+            "s3_files": s3_files,
+            "s3_file_count": len(s3_files),
+            "bucket": S3_BUCKET
+        }
+    except Exception as e:
+        logger.error(f"Debug courses failed: {str(e)}")
+        return {"error": str(e)}
 
 @app.get("/", response_class=HTMLResponse)
 async def user_dashboard(request: Request):
@@ -376,23 +331,19 @@ async def edit_course(course_index: int = Form(...), title: str = Form(...)):
 
 @app.post("/add-plan")
 async def add_plan(course_index: int = Form(...), name: str = Form(...), file: UploadFile = None):
-    logger.info(f"=== STARTING ADD-PLAN ===")
-    logger.info(f"Course index: {course_index}, Plan name: {name}")
+    logger.info(f"Starting add-plan for course_index: {course_index}, name: {name}")
     
     if file:
-        logger.info(f"File provided: {file.filename}")
-        logger.info(f"File content type: {file.content_type}")
-        logger.info(f"File size: {file.size if hasattr(file, 'size') else 'unknown'}")
-        
+        logger.info(f"File provided: {file.filename}, content_type: {file.content_type}")
         # Check file type
         if file.content_type != "application/pdf":
             logger.error(f"Invalid file type: {file.content_type}")
             raise HTTPException(status_code=400, detail="Invalid file type. Only PDF files allowed.")
         
-        # Read file content to check size
+        # Check file size (increased to 10MB)
         try:
             contents = await file.read()
-            logger.info(f"Actual file size: {len(contents)} bytes")
+            logger.info(f"File size: {len(contents)} bytes")
             if len(contents) > 10 * 1024 * 1024:  # 10MB limit
                 logger.error(f"File too large: {len(contents)} bytes")
                 raise HTTPException(status_code=413, detail="File size exceeds 10MB limit")
@@ -402,8 +353,6 @@ async def add_plan(course_index: int = Form(...), name: str = Form(...), file: U
         except Exception as e:
             logger.error(f"Error reading file: {str(e)}")
             raise HTTPException(status_code=400, detail=f"Error reading file: {str(e)}")
-    else:
-        logger.info("No file provided")
 
     courses = get_courses()
     logger.info(f"Retrieved courses, count: {len(courses)}")
@@ -427,27 +376,11 @@ async def add_plan(course_index: int = Form(...), name: str = Form(...), file: U
                     logger.error(f"Failed to save temp file: {temp_pdf_path}")
                     raise HTTPException(status_code=500, detail="Failed to save temporary file")
                 
-                file_size = os.path.getsize(temp_pdf_path)
-                logger.info(f"Temp file saved, size: {file_size} bytes")
-                
-                if file_size == 0:
-                    logger.error("Temp file is empty!")
-                    raise HTTPException(status_code=500, detail="Uploaded file is empty")
+                logger.info(f"Temp file saved, size: {os.path.getsize(temp_pdf_path)} bytes")
                 
                 # Upload to S3
                 logger.info(f"Uploading to S3 bucket: {S3_BUCKET}, key: {filename}")
                 upload_to_s3(temp_pdf_path, filename)
-                
-                # List S3 files after upload to verify
-                try:
-                    response = s3.list_objects_v2(Bucket=S3_BUCKET)
-                    if 'Contents' in response:
-                        s3_files = [obj['Key'] for obj in response['Contents']]
-                        logger.info(f"S3 files after upload: {s3_files}")
-                    else:
-                        logger.info("No files in S3 after upload")
-                except Exception as list_error:
-                    logger.error(f"Error listing S3 files after upload: {list_error}")
                 
                 # Clean up temp file
                 if os.path.exists(temp_pdf_path):
@@ -463,12 +396,10 @@ async def add_plan(course_index: int = Form(...), name: str = Form(...), file: U
             
             save_courses(courses)
             logger.info("Courses saved successfully")
-            logger.info("=== FINISHED ADD-PLAN SUCCESSFULLY ===")
             return RedirectResponse(url="/admin", status_code=303)
         except Exception as e:
             logger.error(f"Error in add_plan: {str(e)}")
             logger.error(f"Traceback: {traceback.format_exc()}")
-            logger.info("=== FINISHED ADD-PLAN WITH ERROR ===")
             raise HTTPException(status_code=500, detail=f"Failed to add plan: {str(e)}")
     else:
         logger.error(f"Invalid course index: {course_index}, courses length: {len(courses)}")
@@ -531,8 +462,9 @@ async def download_pdf(filename: str):
         logger.error(f"Invalid filename: {filename}")
         raise HTTPException(status_code=400, detail="Invalid filename")
     
-    # Create temp file path
-    temp_pdf_path = os.path.join(temp_dir, filename)
+    # Create temp file path with unique name to avoid conflicts
+    unique_id = uuid.uuid4().hex[:8]
+    temp_pdf_path = os.path.join(temp_dir, f"download_{unique_id}_{filename}")
     logger.info(f"Temp path for download: {temp_pdf_path}")
     
     try:
@@ -556,6 +488,7 @@ async def download_pdf(filename: str):
         response = FileResponse(
             temp_pdf_path,
             media_type="application/pdf",
+            filename=filename,
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
         
