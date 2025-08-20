@@ -47,32 +47,42 @@ async def debug_config():
 @app.get("/test-s3")
 async def test_s3():
     try:
-        # List buckets to test connection
-        response = s3.list_buckets()
-        return {"status": "S3 connection successful", "buckets": [b['Name'] for b in response['Buckets']]}
-    except Exception as e:
-        logger.error(f"S3 test failed: {str(e)}")
-        return {"status": "S3 connection failed", "error": str(e)}
-
-# Test S3 file listing
-@app.get("/test-s3-list")
-async def test_s3_list():
-    try:
-        # List objects in the bucket
-        response = s3.list_objects_v2(Bucket=S3_BUCKET, MaxKeys=10)
+        response = s3.list_objects_v2(Bucket=S3_BUCKET, MaxKeys=100)
         files = []
         if 'Contents' in response:
             files = [obj['Key'] for obj in response['Contents']]
         return {
-            "status": "S3 list successful", 
+            "status": "S3 connection successful", 
             "bucket": S3_BUCKET,
-            "files": files,
-            "count": len(files)
+            "files": files[:10],  # Show first 10 files
+            "total_files": len(files)
         }
     except Exception as e:
-        logger.error(f"S3 list test failed: {str(e)}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        return {"status": "S3 list failed", "error": str(e), "bucket": S3_BUCKET}
+        logger.error(f"S3 test failed: {str(e)}")
+        return {"status": "S3 connection failed", "error": str(e), "bucket": S3_BUCKET}
+
+# List all courses and their files
+@app.get("/debug-courses")
+async def debug_courses():
+    try:
+        courses = get_courses()
+        s3_files = []
+        try:
+            response = s3.list_objects_v2(Bucket=S3_BUCKET)
+            if 'Contents' in response:
+                s3_files = [obj['Key'] for obj in response['Contents']]
+        except Exception as e:
+            logger.error(f"Error listing S3 files: {e}")
+            
+        return {
+            "courses": courses,
+            "s3_files": s3_files,
+            "s3_file_count": len(s3_files),
+            "bucket": S3_BUCKET
+        }
+    except Exception as e:
+        logger.error(f"Debug courses failed: {str(e)}")
+        return {"error": str(e)}
 
 # Configure S3 client
 s3 = boto3.client(
@@ -140,7 +150,9 @@ def sanitize_filename(filename: str) -> str:
 def get_courses():
     try:
         courses_json = redis_client.get("courses")
-        return json.loads(courses_json) if courses_json else []
+        courses = json.loads(courses_json) if courses_json else []
+        logger.info(f"Retrieved {len(courses)} courses from Redis")
+        return courses
     except Exception as e:
         logger.error(f"Error fetching courses: {e}")
         return []
@@ -148,6 +160,7 @@ def get_courses():
 def save_courses(courses):
     try:
         redis_client.set("courses", json.dumps(courses))
+        logger.info(f"Saved {len(courses)} courses to Redis")
     except Exception as e:
         logger.error(f"Error saving courses: {e}")
         raise HTTPException(status_code=500, detail="Failed to save courses.")
@@ -191,6 +204,15 @@ def upload_to_s3(file_path: str, s3_key: str):
             ExtraArgs={'ContentType': 'application/pdf'}
         )
         logger.info(f"Successfully uploaded {s3_key} to S3 bucket {S3_BUCKET}")
+        
+        # Verify upload
+        try:
+            s3.head_object(Bucket=S3_BUCKET, Key=s3_key)
+            logger.info(f"Verified upload of {s3_key}")
+        except Exception as verify_error:
+            logger.error(f"Failed to verify upload of {s3_key}: {verify_error}")
+            raise Exception(f"Upload verification failed: {verify_error}")
+            
     except Exception as e:
         logger.error(f"Error uploading to S3: {str(e)}")
         logger.error(f"Traceback: {traceback.format_exc()}")
@@ -200,13 +222,33 @@ def download_from_s3(s3_key: str, local_path: str):
     try:
         logger.info(f"Starting S3 download: {S3_BUCKET}/{s3_key} -> {local_path}")
         
+        # List all objects to debug
+        try:
+            response = s3.list_objects_v2(Bucket=S3_BUCKET)
+            if 'Contents' in response:
+                s3_files = [obj['Key'] for obj in response['Contents']]
+                logger.info(f"S3 files in bucket: {s3_files}")
+            else:
+                logger.info("No files found in S3 bucket")
+        except Exception as list_error:
+            logger.error(f"Error listing S3 files: {list_error}")
+        
         # Check if object exists first
         try:
-            s3.head_object(Bucket=S3_BUCKET, Key=s3_key)
-            logger.info(f"Object {s3_key} exists in bucket {S3_BUCKET}")
+            response = s3.head_object(Bucket=S3_BUCKET, Key=s3_key)
+            logger.info(f"Object {s3_key} exists in bucket {S3_BUCKET}, size: {response.get('ContentLength', 'unknown')}")
         except s3.exceptions.NoSuchKey:
             logger.error(f"Object {s3_key} not found in bucket {S3_BUCKET}")
-            raise Exception(f"File {s3_key} not found in storage")
+            # List available files for debugging
+            try:
+                response = s3.list_objects_v2(Bucket=S3_BUCKET)
+                if 'Contents' in response:
+                    available_files = [obj['Key'] for obj in response['Contents']]
+                    logger.info(f"Available files in bucket: {available_files}")
+                raise Exception(f"File '{s3_key}' not found in storage. Available files: {len(available_files) if 'Contents' in response else 0}")
+            except Exception as list_error:
+                logger.error(f"Error listing available files: {list_error}")
+                raise Exception(f"File '{s3_key}' not found in storage")
         except Exception as e:
             logger.error(f"Error checking object existence: {str(e)}")
             raise Exception(f"Error accessing file in storage: {str(e)}")
@@ -229,6 +271,16 @@ def download_from_s3(s3_key: str, local_path: str):
 
 def delete_from_s3(s3_key: str):
     try:
+        # Check if file exists before deleting
+        try:
+            s3.head_object(Bucket=S3_BUCKET, Key=s3_key)
+            logger.info(f"File {s3_key} exists, proceeding with deletion")
+        except s3.exceptions.NoSuchKey:
+            logger.warning(f"File {s3_key} not found in S3, skipping deletion")
+            return
+        except Exception as e:
+            logger.warning(f"Error checking file existence before deletion: {e}")
+        
         s3.delete_object(Bucket=S3_BUCKET, Key=s3_key)
         logger.info(f"Deleted {s3_key} from S3")
     except Exception as e:
