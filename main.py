@@ -79,14 +79,70 @@ async def debug_courses():
         except Exception as e:
             logger.error(f"Error listing S3 files: {e}")
             
+        # Find mismatched files
+        mismatched_files = []
+        for i, course in enumerate(courses):
+            for j, plan in enumerate(course.get("plans", [])):
+                filename = plan.get("filename")
+                if filename and filename not in s3_files:
+                    mismatched_files.append({
+                        "course_index": i,
+                        "plan_index": j,
+                        "course_title": course.get("title", "Unknown"),
+                        "plan_name": plan.get("name", "Unknown"),
+                        "filename": filename
+                    })
+        
         return {
             "courses": courses,
             "s3_files": s3_files,
             "s3_file_count": len(s3_files),
-            "bucket": S3_BUCKET
+            "bucket": S3_BUCKET,
+            "mismatched_files": mismatched_files,
+            "mismatched_count": len(mismatched_files)
         }
     except Exception as e:
         logger.error(f"Debug courses failed: {str(e)}")
+        return {"error": str(e)}
+
+@app.get("/fix-mismatched-files")
+async def fix_mismatched_files():
+    """Remove references to files that don't exist in S3"""
+    try:
+        courses = get_courses()
+        s3_files = []
+        try:
+            response = s3.list_objects_v2(Bucket=S3_BUCKET)
+            if 'Contents' in response:
+                s3_files = [obj['Key'] for obj in response['Contents']]
+        except Exception as e:
+            logger.error(f"Error listing S3 files: {e}")
+            return {"error": "Could not list S3 files"}
+        
+        fixed_count = 0
+        # Remove references to non-existent files
+        for course in courses:
+            plans_to_remove = []
+            for i, plan in enumerate(course.get("plans", [])):
+                filename = plan.get("filename")
+                if filename and filename not in s3_files:
+                    logger.info(f"Removing reference to non-existent file: {filename}")
+                    plans_to_remove.append(i)
+                    fixed_count += 1
+            
+            # Remove plans in reverse order to maintain indices
+            for i in reversed(plans_to_remove):
+                course["plans"].pop(i)
+        
+        if fixed_count > 0:
+            save_courses(courses)
+            logger.info(f"Fixed {fixed_count} mismatched file references")
+            return {"status": "success", "fixed_count": fixed_count}
+        else:
+            return {"status": "success", "message": "No mismatched files found"}
+            
+    except Exception as e:
+        logger.error(f"Fix mismatched files failed: {str(e)}")
         return {"error": str(e)}
 
 @app.get("/test-upload")
@@ -283,7 +339,7 @@ def upload_to_s3(file_path: str, s3_key: str):
             try:
                 response = s3.head_object(Bucket=S3_BUCKET, Key=s3_key)
                 logger.info(f"Verified upload of {s3_key}. Size: {response.get('ContentLength', 'unknown')} bytes")
-                return
+                return True
             except Exception as verify_error:
                 logger.warning(f"Upload verification attempt {attempt + 1} failed: {verify_error}")
                 if attempt == max_retries - 1:
@@ -306,20 +362,7 @@ def download_from_s3(s3_key: str, local_path: str):
             logger.info(f"Object {s3_key} exists in bucket {S3_BUCKET}, size: {response.get('ContentLength', 'unknown')} bytes")
         except s3.exceptions.NoSuchKey:
             logger.error(f"Object {s3_key} not found in bucket {S3_BUCKET}")
-            # List available files for debugging
-            try:
-                list_response = s3.list_objects_v2(Bucket=S3_BUCKET)
-                if 'Contents' in list_response:
-                    available_files = [obj['Key'] for obj in list_response['Contents']]
-                    logger.info(f"Available files in bucket: {available_files}")
-                    # Check if the file exists with a slightly different name
-                    for available_file in available_files:
-                        if s3_key.lower() in available_file.lower() or available_file.lower() in s3_key.lower():
-                            logger.info(f"Possible match found: {available_file}")
-                raise Exception(f"File '{s3_key}' not found in storage. Check /debug-courses to see what files are actually stored.")
-            except Exception as list_error:
-                logger.error(f"Error listing available files: {list_error}")
-                raise Exception(f"File '{s3_key}' not found in storage")
+            raise Exception(f"File '{s3_key}' not found in storage. This file may have been deleted or never uploaded successfully.")
         except Exception as e:
             logger.error(f"Error checking object existence: {str(e)}")
             raise Exception(f"Error accessing file in storage: {str(e)}")
@@ -348,16 +391,16 @@ def delete_from_s3(s3_key: str):
             logger.info(f"File {s3_key} exists, proceeding with deletion")
         except s3.exceptions.NoSuchKey:
             logger.warning(f"File {s3_key} not found in S3, skipping deletion")
-            return
+            return True
         except Exception as e:
             logger.warning(f"Error checking file existence before deletion: {e}")
         
         s3.delete_object(Bucket=S3_BUCKET, Key=s3_key)
         logger.info(f"Deleted {s3_key} from S3")
+        return True
     except Exception as e:
         logger.error(f"Error deleting from S3: {e}")
-        # Don't raise exception for deletion - it's not critical
-        pass
+        return False
 
 @app.get("/", response_class=HTMLResponse)
 async def user_dashboard(request: Request):
@@ -474,15 +517,18 @@ async def add_plan(course_index: int = Form(...), name: str = Form(...), file: U
                 
                 # Upload to S3
                 logger.info(f"Uploading to S3 bucket: {S3_BUCKET}, key: {filename}")
-                upload_to_s3(temp_pdf_path, filename)
+                upload_success = upload_to_s3(temp_pdf_path, filename)
                 
-                # Clean up temp file immediately after successful upload
+                # Clean up temp file immediately after upload attempt
                 if os.path.exists(temp_pdf_path):
                     os.remove(temp_pdf_path)
                     logger.info(f"Cleaned up temp file: {temp_pdf_path}")
                 
-                courses[course_index]["plans"].append({"name": name, "filename": filename})
-                logger.info(f"Added plan to course, plan count: {len(courses[course_index]['plans'])}")
+                if upload_success:
+                    courses[course_index]["plans"].append({"name": name, "filename": filename})
+                    logger.info(f"Added plan to course, plan count: {len(courses[course_index]['plans'])}")
+                else:
+                    raise HTTPException(status_code=500, detail="Failed to upload file to storage")
             else:
                 # Handle case where no file is uploaded
                 courses[course_index]["plans"].append({"name": name, "filename": None})
@@ -541,14 +587,17 @@ async def edit_plan(course_index: int = Form(...), plan_index: int = Form(...), 
                     f.write(await file.read())
                 
                 # Upload to S3
-                upload_to_s3(temp_pdf_path, filename)
+                upload_success = upload_to_s3(temp_pdf_path, filename)
                 
                 # Clean up temp file
                 if os.path.exists(temp_pdf_path):
                     os.remove(temp_pdf_path)
                 
-                courses[course_index]["plans"][plan_index]["filename"] = filename
-                logger.info(f"Updated plan with new file: {filename}")
+                if upload_success:
+                    courses[course_index]["plans"][plan_index]["filename"] = filename
+                    logger.info(f"Updated plan with new file: {filename}")
+                else:
+                    raise HTTPException(status_code=500, detail="Failed to upload new file to storage")
             
             save_courses(courses)
             logger.info("Courses updated successfully")
@@ -630,7 +679,7 @@ async def download_pdf(filename: str):
                 logger.info(f"Cleaned up temp file after error: {temp_pdf_path}")
             except Exception as cleanup_error:
                 logger.error(f"Error cleaning up temp file after download error: {cleanup_error}")
-        raise HTTPException(status_code=500, detail=f"Failed to download file: {str(e)}. Please check /debug-courses to see if the file exists in storage.")
+        raise HTTPException(status_code=500, detail=f"Failed to download file: {str(e)}. The file may not exist in storage. Visit /debug-courses to check file consistency, or /fix-mismatched-files to clean up references.")
 
 @app.post("/delete-course")
 async def delete_course(course_index: int = Form(...)):
@@ -640,8 +689,11 @@ async def delete_course(course_index: int = Form(...)):
         for plan in courses[course_index]["plans"]:
             if plan["filename"]:  # Only delete if filename exists
                 try:
-                    delete_from_s3(plan["filename"])
-                    logger.info(f"Deleted file from S3: {plan['filename']}")
+                    delete_result = delete_from_s3(plan["filename"])
+                    if delete_result:
+                        logger.info(f"Deleted file from S3: {plan['filename']}")
+                    else:
+                        logger.warning(f"Failed to delete file from S3: {plan['filename']}")
                 except Exception as e:
                     logger.error(f"Error deleting file {plan['filename']} from S3: {e}")
         
@@ -659,8 +711,11 @@ async def delete_plan(course_index: int = Form(...), plan_index: int = Form(...)
         filename = courses[course_index]["plans"][plan_index]["filename"]
         if filename:
             try:
-                delete_from_s3(filename)
-                logger.info(f"Deleted file from S3: {filename}")
+                delete_result = delete_from_s3(filename)
+                if delete_result:
+                    logger.info(f"Deleted file from S3: {filename}")
+                else:
+                    logger.warning(f"Failed to delete file from S3: {filename}")
             except Exception as e:
                 logger.error(f"Error deleting file {filename} from S3: {e}")
         
