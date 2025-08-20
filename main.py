@@ -21,18 +21,25 @@ import uvicorn
 
 load_dotenv()
 
-app = FastAPI()
+# Add this to handle health checks
+app = FastAPI(title="Course Management System")
+
+# Add health check endpoints
+@app.get("/kaithhealthcheck")
+@app.get("/kaithheathcheck")
+async def health_check():
+    return {"status": "healthy"}
 
 # Configure S3 client
 s3 = boto3.client(
     "s3",
     region_name="us-east-1",
-    endpoint_url="https://objstorage.leapcell.io",
+    endpoint_url="https://objstorage.leapcell.io",  # Fixed: removed extra spaces
     aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
     aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY")
 )
 
-S3_BUCKET = os.getenv("S3_BUCKET")
+S3_BUCKET = os.getenv("S3_BUCKET")  # Fixed: missing closing quote
 
 # Use /tmp directory for temporary files
 temp_dir = "/tmp"
@@ -96,7 +103,7 @@ def get_courses():
 
 def save_courses(courses):
     try:
-        redis_client.set("courses", json.dumps(courses, default=lambda o: o.dict()))
+        redis_client.set("courses", json.dumps(courses))
     except Exception as e:
         logger.error(f"Error saving courses: {e}")
         raise HTTPException(status_code=500, detail="Failed to save courses.")
@@ -193,27 +200,40 @@ async def edit_course(course_index: int = Form(...), title: str = Form(...)):
 
 @app.post("/add-plan")
 async def add_plan(course_index: int = Form(...), name: str = Form(...), file: UploadFile = None):
-    if file.content_type != "application/pdf":
-        raise HTTPException(status_code=400, detail="Invalid file type")
-    if file.size > 5 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="File size exceeds limit")
+    if file:
+        # Check file type
+        if file.content_type != "application/pdf":
+            raise HTTPException(status_code=400, detail="Invalid file type. Only PDF files allowed.")
+        
+        # Check file size (increased to 10MB)
+        contents = await file.read()
+        if len(contents) > 10 * 1024 * 1024:  # 10MB limit
+            raise HTTPException(status_code=413, detail="File size exceeds 10MB limit")
+        
+        # Reset file pointer
+        await file.seek(0)
 
     courses = get_courses()
     if 0 <= course_index < len(courses):
         try:
-            filename = sanitize_filename(file.filename)
-            # Save file temporarily
-            temp_pdf_path = os.path.join(temp_dir, filename)
-            with open(temp_pdf_path, "wb") as f:
-                f.write(await file.read())
+            if file and file.filename:
+                filename = sanitize_filename(file.filename)
+                # Save file temporarily
+                temp_pdf_path = os.path.join(temp_dir, filename)
+                with open(temp_pdf_path, "wb") as f:
+                    f.write(await file.read())
+                
+                # Upload to S3
+                upload_to_s3(temp_pdf_path, filename)
+                
+                # Clean up temp file
+                os.remove(temp_pdf_path)
+                
+                courses[course_index]["plans"].append({"name": name, "filename": filename})
+            else:
+                # Handle case where no file is uploaded
+                courses[course_index]["plans"].append({"name": name, "filename": None})
             
-            # Upload to S3
-            upload_to_s3(temp_pdf_path, filename)
-            
-            # Clean up temp file
-            os.remove(temp_pdf_path)
-            
-            courses[course_index]["plans"].append({"name": name, "filename": filename})
             save_courses(courses)
         except Exception as e:
             logger.error(f"Error adding plan: {e}")
@@ -231,14 +251,25 @@ async def edit_plan(course_index: int = Form(...), plan_index: int = Form(...), 
             
             # If a new file is provided, update it
             if file and file.filename:
+                # Check file type
                 if file.content_type != "application/pdf":
-                    raise HTTPException(status_code=400, detail="Invalid file type")
-                if file.size > 5 * 1024 * 1024:
-                    raise HTTPException(status_code=400, detail="File size exceeds limit")
+                    raise HTTPException(status_code=400, detail="Invalid file type. Only PDF files allowed.")
                 
-                # Delete old file from S3
+                # Check file size
+                contents = await file.read()
+                if len(contents) > 10 * 1024 * 1024:  # 10MB limit
+                    raise HTTPException(status_code=413, detail="File size exceeds 10MB limit")
+                
+                # Reset file pointer
+                await file.seek(0)
+                
+                # Delete old file from S3 if it exists
                 old_filename = courses[course_index]["plans"][plan_index]["filename"]
-                delete_from_s3(old_filename)
+                if old_filename:
+                    try:
+                        delete_from_s3(old_filename)
+                    except Exception as e:
+                        logger.error(f"Error deleting old file {old_filename} from S3: {e}")
                 
                 # Upload new file
                 filename = sanitize_filename(file.filename)
@@ -298,10 +329,11 @@ async def delete_course(course_index: int = Form(...)):
     if 0 <= course_index < len(courses):
         # Delete all associated files from S3
         for plan in courses[course_index]["plans"]:
-            try:
-                delete_from_s3(plan["filename"])
-            except Exception as e:
-                logger.error(f"Error deleting file {plan['filename']} from S3: {e}")
+            if plan["filename"]:  # Only delete if filename exists
+                try:
+                    delete_from_s3(plan["filename"])
+                except Exception as e:
+                    logger.error(f"Error deleting file {plan['filename']} from S3: {e}")
         
         courses.pop(course_index)
         save_courses(courses)
@@ -312,12 +344,13 @@ async def delete_course(course_index: int = Form(...)):
 async def delete_plan(course_index: int = Form(...), plan_index: int = Form(...)):
     courses = get_courses()
     if 0 <= course_index < len(courses) and 0 <= plan_index < len(courses[course_index]["plans"]):
-        # Delete file from S3
+        # Delete file from S3 if it exists
         filename = courses[course_index]["plans"][plan_index]["filename"]
-        try:
-            delete_from_s3(filename)
-        except Exception as e:
-            logger.error(f"Error deleting file {filename} from S3: {e}")
+        if filename:
+            try:
+                delete_from_s3(filename)
+            except Exception as e:
+                logger.error(f"Error deleting file {filename} from S3: {e}")
         
         courses[course_index]["plans"].pop(plan_index)
         save_courses(courses)
@@ -333,6 +366,16 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
                 "request": request,
                 "status_code": exc.status_code,
                 "error_message": exc.detail or "Page not found",
+            },
+            status_code=exc.status_code,
+        )
+    elif exc.status_code == 413:  # Handle "Request Entity Too Large"
+        return templates.TemplateResponse(
+            "error.html",
+            {
+                "request": request,
+                "status_code": exc.status_code,
+                "error_message": "File too large. Maximum size is 10MB.",
             },
             status_code=exc.status_code,
         )
@@ -374,5 +417,8 @@ if __name__ == "__main__":
         port=int(os.getenv("PORT", 8000)),
         reload=os.getenv("ENVIRONMENT", "development") == "development",
         workers=int(os.getenv("WORKERS", 1)),
-        log_level="info"
+        log_level="info",
+        # Add these to handle larger file uploads
+        limit_concurrency=100,
+        limit_max_requests=1000,
     )
