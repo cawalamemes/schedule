@@ -32,7 +32,7 @@ s3 = boto3.client(
     aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY")
 )
 
-S3_BUCKET = os.getenv("S3_BUCKET"")
+S3_BUCKET = os.getenv("S3_BUCKET")
 
 # Use /tmp directory for temporary files
 temp_dir = "/tmp"
