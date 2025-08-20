@@ -54,6 +54,26 @@ async def test_s3():
         logger.error(f"S3 test failed: {str(e)}")
         return {"status": "S3 connection failed", "error": str(e)}
 
+# Test S3 file listing
+@app.get("/test-s3-list")
+async def test_s3_list():
+    try:
+        # List objects in the bucket
+        response = s3.list_objects_v2(Bucket=S3_BUCKET, MaxKeys=10)
+        files = []
+        if 'Contents' in response:
+            files = [obj['Key'] for obj in response['Contents']]
+        return {
+            "status": "S3 list successful", 
+            "bucket": S3_BUCKET,
+            "files": files,
+            "count": len(files)
+        }
+    except Exception as e:
+        logger.error(f"S3 list test failed: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return {"status": "S3 list failed", "error": str(e), "bucket": S3_BUCKET}
+
 # Configure S3 client
 s3 = boto3.client(
     "s3",
@@ -178,11 +198,34 @@ def upload_to_s3(file_path: str, s3_key: str):
 
 def download_from_s3(s3_key: str, local_path: str):
     try:
+        logger.info(f"Starting S3 download: {S3_BUCKET}/{s3_key} -> {local_path}")
+        
+        # Check if object exists first
+        try:
+            s3.head_object(Bucket=S3_BUCKET, Key=s3_key)
+            logger.info(f"Object {s3_key} exists in bucket {S3_BUCKET}")
+        except s3.exceptions.NoSuchKey:
+            logger.error(f"Object {s3_key} not found in bucket {S3_BUCKET}")
+            raise Exception(f"File {s3_key} not found in storage")
+        except Exception as e:
+            logger.error(f"Error checking object existence: {str(e)}")
+            raise Exception(f"Error accessing file in storage: {str(e)}")
+        
+        # Download the file
         s3.download_file(S3_BUCKET, s3_key, local_path)
-        logger.info(f"Downloaded {s3_key} from S3")
+        logger.info(f"Successfully downloaded {s3_key} from S3 to {local_path}")
+        
+        # Verify file was downloaded
+        if not os.path.exists(local_path):
+            raise Exception(f"File was not downloaded to {local_path}")
+            
+        file_size = os.path.getsize(local_path)
+        logger.info(f"Downloaded file size: {file_size} bytes")
+        
     except Exception as e:
-        logger.error(f"Error downloading from S3: {e}")
-        raise HTTPException(status_code=500, detail="Failed to download file from storage.")
+        logger.error(f"Error downloading from S3 key {s3_key}: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise Exception(f"Failed to download file from storage: {str(e)}")
 
 def delete_from_s3(s3_key: str):
     try:
@@ -367,15 +410,33 @@ async def edit_plan(course_index: int = Form(...), plan_index: int = Form(...), 
 
 @app.get("/download/{filename}")
 async def download_pdf(filename: str):
+    logger.info(f"Starting download for filename: {filename}")
+    
+    # Validate filename
+    if not filename or ".." in filename or "/" in filename:
+        logger.error(f"Invalid filename: {filename}")
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    
     # Create temp file path
     temp_pdf_path = os.path.join(temp_dir, filename)
+    logger.info(f"Temp path for download: {temp_pdf_path}")
     
     try:
         # Download from S3 to temp location
+        logger.info(f"Downloading from S3 bucket: {S3_BUCKET}, key: {filename}")
         download_from_s3(filename, temp_pdf_path)
         
-        if not os.path.isfile(temp_pdf_path):
-            raise HTTPException(status_code=404, detail="File not found")
+        # Verify file was downloaded
+        if not os.path.exists(temp_pdf_path):
+            logger.error(f"File not found after S3 download: {temp_pdf_path}")
+            raise HTTPException(status_code=404, detail="File not found after download")
+        
+        file_size = os.path.getsize(temp_pdf_path)
+        logger.info(f"Downloaded file size: {file_size} bytes")
+        
+        if file_size == 0:
+            logger.error(f"Downloaded file is empty: {temp_pdf_path}")
+            raise HTTPException(status_code=500, detail="Downloaded file is empty")
         
         # Return file response
         response = FileResponse(
@@ -384,20 +445,34 @@ async def download_pdf(filename: str):
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
         
+        logger.info(f"File response created for: {filename}")
+        
         # Clean up temp file after response is sent
         @response.on_close
         def cleanup_temp_file():
             try:
                 if os.path.exists(temp_pdf_path):
                     os.remove(temp_pdf_path)
+                    logger.info(f"Cleaned up temp file: {temp_pdf_path}")
             except Exception as e:
-                logger.error(f"Error cleaning up temp file: {e}")
+                logger.error(f"Error cleaning up temp file {temp_pdf_path}: {e}")
         
         return response
         
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
     except Exception as e:
-        logger.error(f"Error downloading file: {e}")
-        raise HTTPException(status_code=500, detail="Failed to download file")
+        logger.error(f"Error downloading file {filename}: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        # Clean up temp file if it exists
+        if os.path.exists(temp_pdf_path):
+            try:
+                os.remove(temp_pdf_path)
+                logger.info(f"Cleaned up temp file after error: {temp_pdf_path}")
+            except Exception as cleanup_error:
+                logger.error(f"Error cleaning up temp file after download error: {cleanup_error}")
+        raise HTTPException(status_code=500, detail=f"Failed to download file: {str(e)}")
 
 @app.post("/delete-course")
 async def delete_course(course_index: int = Form(...)):
