@@ -3,24 +3,115 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Login</title>
+    <title>Admin Login - Mission CS</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary-color: #4e73df;
+            --secondary-color: #e63e58;
+        }
+        
+        body {
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        }
+        
+        .login-card {
+            width: 100%;
+            max-width: 400px;
+            background: #fff;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+        
+        .login-card-header {
+            background: var(--primary-color);
+            color: white;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .login-card-body {
+            padding: 30px;
+        }
+        
+        .form-control {
+            padding: 12px 15px;
+            height: 45px;
+            border-radius: 5px;
+        }
+        
+        .btn-login {
+            background: var(--primary-color);
+            border: none;
+            padding: 12px;
+            font-weight: 600;
+        }
+        
+        .btn-login:hover {
+            background: #3a5fc8;
+        }
+        
+        .input-group-text {
+            background: #fff;
+        }
+        
+        .brand-logo {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+        
+        .brand-subtitle {
+            font-size: 14px;
+            opacity: 0.8;
+        }
+        
+        .alert {
+            border-radius: 5px;
+            padding: 10px 15px;
+        }
+    </style>
 </head>
 <body>
-<div class="container mt-5">
-    <h1 class="text-center">Admin Login</h1>
-    <form action="/admin/login" method="post" class="mt-4">
-        <div class="mb-3">
-            <label for="email" class="form-label">Email</label>
-            <input type="email" id="email" name="email" class="form-control" required>
+    <div class="login-card">
+        <div class="login-card-header">
+            <div class="brand-logo">Mission CS</div>
+            <div class="brand-subtitle">Admin Portal</div>
         </div>
-        <div class="mb-3">
-            <label for="password" class="form-label">Password</label>
-            <input type="password" id="password" name="password" class="form-control" required>
+        <div class="login-card-body">
+            <form action="/admin/login" method="post">
+                <div class="mb-3">
+                    <label for="email" class="form-label">Email Address</label>
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="fas fa-envelope"></i></span>
+                        <input type="email" id="email" name="email" class="form-control" placeholder="admin@example.com" required>
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <label for="password" class="form-label">Password</label>
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="fas fa-lock"></i></span>
+                        <input type="password" id="password" name="password" class="form-control" placeholder="Enter your password" required>
+                    </div>
+                </div>
+                <button class="btn btn-login btn-primary w-100">Sign In</button>
+                
+                {% if error %}
+                <div class="alert alert-danger mt-3" role="alert">
+                    <i class="fas fa-exclamation-circle me-2"></i> {{ error }}
+                </div>
+                {% endif %}
+            </form>
         </div>
-        <button class="btn btn-primary w-100">Login</button>
-    </form>
-</div>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
