@@ -28,11 +28,11 @@ s3 = boto3.client(
     "s3",
     region_name="us-east-1",
     endpoint_url="https://objstorage.leapcell.io",
-    aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", "dc60b71e92ad4c5b8ce6916b6a822544"),
-    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "61a724c0aceda49a211ffdd2db53c5ce1fdd5b3bb02f31aecc53f496434dd6ac")
+    aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY")
 )
 
-S3_BUCKET = os.getenv("S3_BUCKET", "schedule-bgx6-5e6c-77raidoi")
+S3_BUCKET = os.getenv("S3_BUCKET"")
 
 # Use /tmp directory for temporary files
 temp_dir = "/tmp"
