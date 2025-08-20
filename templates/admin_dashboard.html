@@ -3,138 +3,631 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard</title>
+    <title>Admin Dashboard - Mission CS</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary-color: #4e73df;
+            --secondary-color: #e63e58;
+            --success-color: #1cc88a;
+            --info-color: #36b9cc;
+            --warning-color: #f6c23e;
+            --danger-color: #e74a3b;
+            --light-color: #f8f9fc;
+            --dark-color: #5a5c69;
+        }
+        
+        body {
+            background-color: #f8f9fc;
+            font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        }
+        
+        .sidebar {
+            min-height: 100vh;
+            background: linear-gradient(180deg, var(--primary-color) 10%, #224abe 100%);
+            color: white;
+            position: fixed;
+            width: 250px;
+            z-index: 100;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+        }
+        
+        .sidebar-brand {
+            height: 70px;
+            padding: 1.5rem 1rem;
+            font-size: 1.2rem;
+            font-weight: 800;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 0.05rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .sidebar-heading {
+            text-align: left;
+            padding: 0 1rem;
+            font-weight: 800;
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.4);
+            margin-top: 1.5rem;
+        }
+        
+        .sidebar-item {
+            display: block;
+            padding: 0.75rem 1rem;
+            color: rgba(255, 255, 255, 0.8);
+            text-decoration: none;
+            transition: all 0.15s;
+        }
+        
+        .sidebar-item:hover {
+            color: #fff;
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        .sidebar-item.active {
+            color: #fff;
+            background-color: rgba(255, 255, 255, 0.2);
+            font-weight: 700;
+        }
+        
+        .sidebar-item i {
+            margin-right: 0.5rem;
+        }
+        
+        .sidebar-dropdown {
+            padding-left: 2rem;
+        }
+        
+        #content-wrapper {
+            margin-left: 250px;
+            width: calc(100% - 250px);
+        }
+        
+        .navbar {
+            height: 70px;
+            box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
+            background-color: #fff;
+        }
+        
+        .card {
+            box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.1);
+            border: 1px solid #e3e6f0;
+            margin-bottom: 1.5rem;
+        }
+        
+        .card-header {
+            background-color: #f8f9fc;
+            border-bottom: 1px solid #e3e6f0;
+            font-weight: 700;
+            color: var(--dark-color);
+        }
+        
+        .btn-primary {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+        
+        .btn-success {
+            background-color: var(--success-color);
+            border-color: var(--success-color);
+        }
+        
+        .btn-danger {
+            background-color: var(--danger-color);
+            border-color: var(--danger-color);
+        }
+        
+        .btn-secondary {
+            background-color: var(--secondary-color);
+            border-color: var(--secondary-color);
+        }
+        
+        .btn-warning {
+            background-color: var(--warning-color);
+            border-color: var(--warning-color);
+        }
+        
+        .stats-card {
+            border-left: 4px solid var(--primary-color);
+        }
+        
+        .stats-card.courses {
+            border-left-color: var(--primary-color);
+        }
+        
+        .stats-card.plans {
+            border-left-color: var(--info-color);
+        }
+        
+        .stats-card.files {
+            border-left-color: var(--success-color);
+        }
+        
+        .stats-icon {
+            font-size: 2rem;
+            opacity: 0.3;
+        }
+        
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+        }
+        
+        .storage-badge {
+            background-color: var(--info-color);
+        }
+        
+        .section-content {
+            display: none;
+        }
+        
+        .section-content.active {
+            display: block;
+        }
+        
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 100%;
+                position: relative;
+                min-height: auto;
+            }
+            
+            #content-wrapper {
+                margin-left: 0;
+                width: 100%;
+            }
+        }
+    </style>
 </head>
 <body>
-<div class="container mt-5">
-    <h1 class="text-center">Admin Dashboard</h1>
-
-    <!-- Add Course Section -->
-    <form action="/add-course" method="post" class="mb-5">
-        <div class="mb-3">
-            <label for="title" class="form-label">Add New Course</label>
-            <input type="text" id="title" name="title" class="form-control" required>
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="sidebar-brand">
+            Mission CS Admin
         </div>
-        <button class="btn btn-success">Add Course</button>
-    </form>
-
-
-<!-- Reorder Courses -->
-<form action="/update-course-order" method="post" id="courseOrderForm">
-    <input type="hidden" name="new_order" id="courseOrder">
-    <ul class="list-group mb-3" id="courseList">
-        {% for course in courses %}
-        <li class="list-group-item d-flex justify-content-between align-items-center" data-index="{{ loop.index0 }}">
-            {{ course.title }}
-            <button type="button" class="btn btn-secondary btn-sm">Drag</button>
-        </li>
-        {% endfor %}
-    </ul>
-    <button class="btn btn-primary">Update Course Order</button>
-</form>
-
-<!-- Reorder Plans -->
-{% for course in courses %}
-<form action="/update-plan-order" method="post" id="planOrderForm-{{ loop.index0 }}">
-    <input type="hidden" name="course_index" value="{{ loop.index0 }}">
-    <input type="hidden" name="new_order" id="planOrder-{{ loop.index0 }}">
-    <ul class="list-group mb-3" id="planList-{{ loop.index0 }}">
-        {% for plan in course.plans %}
-        <li class="list-group-item d-flex justify-content-between align-items-center" data-index="{{ loop.index0 }}">
-            {{ plan.name }}
-            <button type="button" class="btn btn-secondary btn-sm">Drag</button>
-        </li>
-        {% endfor %}
-    </ul>
-    <button class="btn btn-primary">Update Plan Order</button>
-</form>
-{% endfor %}
-
-
-    
-    <!-- Manage Courses -->
-    <h2>Manage Courses</h2>
-    {% for course in courses %}
-    <div class="card mb-4">
-        <div class="card-header d-flex justify-content-between align-items-center">
-            <h3 class="m-0">{{ course.title }}</h3>
-            <form action="/delete-course" method="post" style="margin: 0;">
-                <input type="hidden" name="course_index" value="{{ loop.index0 }}">
-                <button class="btn btn-danger btn-sm">Delete Course</button>
-            </form>
-        </div>
-        <div class="card-body">
-            <h5>Plans:</h5>
-            <ul class="list-group mb-3" id="plansList-{{ loop.index0 }}">
-                {% for plan in course.plans %}
-                <li class="list-group-item d-flex justify-content-between align-items-center" data-index="{{ loop.index0 }}">
-                    {{ plan.name }}
-                    <form action="/delete-plan" method="post" style="margin: 0;">
-    <input type="hidden" name="course_index" value="{{ loop.index0 }}">
-    <input type="hidden" name="plan_index" value="{{ loop.index0 }}">
-    <button class="btn btn-danger btn-sm">Delete Plan</button>
-</form>
-                </li>
-                {% endfor %}
-            </ul>
-
-            <!-- Add Plan to Course -->
-            <form action="/add-plan" method="post" enctype="multipart/form-data">
-                <input type="hidden" name="course_index" value="{{ loop.index0 }}">
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <label for="plan-name-{{ loop.index0 }}" class="form-label">Plan Name</label>
-                        <input type="text" id="plan-name-{{ loop.index0 }}" name="name" class="form-control" required>
-                    </div>
-                    <div class="col-md-6">
-                        <label for="file-{{ loop.index0 }}" class="form-label">Upload PDF</label>
-                        <input type="file" id="file-{{ loop.index0 }}" name="file" class="form-control" accept=".pdf" required>
-                    </div>
-                </div>
-                <button class="btn btn-primary mt-3">Add Plan</button>
-            </form>
+        
+        <div class="sidebar-heading">Dashboard</div>
+        <a href="#" class="sidebar-item active" data-section="dashboard">
+            <i class="fas fa-tachometer-alt"></i> Overview
+        </a>
+        
+        <div class="sidebar-heading">Course Management</div>
+        <a href="#" class="sidebar-item" data-section="add-course">
+            <i class="fas fa-plus-circle"></i> Add Course
+        </a>
+        <a href="#" class="sidebar-item" data-section="view-courses">
+            <i class="fas fa-list"></i> View Courses
+        </a>
+        
+        <div class="sidebar-heading">Plan Management</div>
+        <a href="#" class="sidebar-item" data-section="add-plan">
+            <i class="fas fa-plus-circle"></i> Add Plan
+        </a>
+        <a href="#" class="sidebar-item" data-section="view-plans">
+            <i class="fas fa-list"></i> View Plans
+        </a>
+        
+        <div class="sidebar-heading">Tools</div>
+        <a href="/logs" class="sidebar-item">
+            <i class="fas fa-clipboard-list"></i> View Logs
+        </a>
+        <a href="/" class="sidebar-item" target="_blank">
+            <i class="fas fa-external-link-alt"></i> View Site
+        </a>
+        
+        <div class="mt-auto p-3">
+            <a href="/logout" class="sidebar-item">
+                <i class="fas fa-sign-out-alt"></i> Logout
+            </a>
         </div>
     </div>
-    {% endfor %}
-</div>
 
-<script>
-    document.addEventListener("DOMContentLoaded", function () {
-        // Reorder Courses
-        const courseList = document.getElementById("courseList");
-        const courseOrderInput = document.getElementById("courseOrder");
-        new Sortable(courseList, {
-            animation: 150,
-            onEnd: function () {
-                const order = Array.from(courseList.children).map((item) =>
-                    item.getAttribute("data-index")
-                );
-                courseOrderInput.value = JSON.stringify(order);
-            },
-        });
+    <!-- Content Wrapper -->
+    <div id="content-wrapper">
+        <!-- Top Navigation -->
+        <nav class="navbar navbar-expand navbar-light">
+            <div class="container-fluid">
+                <button id="sidebarToggle" class="btn btn-link rounded-circle mr-3">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <h4 class="mb-0">Admin Dashboard</h4>
+                <ul class="navbar-nav ml-auto">
+                    <li class="nav-item">
+                        <span class="nav-link">
+                            <i class="fas fa-user-circle fa-fw"></i> Admin User
+                        </span>
+                    </li>
+                </ul>
+            </div>
+        </nav>
 
-        // Reorder Plans
-        const planForms = document.querySelectorAll("[id^='planOrderForm-']");
-        planForms.forEach((form) => {
-            const planListId = form.querySelector("ul").id;
-            const planOrderInput = form.querySelector("input[name='new_order']");
-            const planList = document.getElementById(planListId);
-            new Sortable(planList, {
-                animation: 150,
-                onEnd: function () {
-                    const order = Array.from(planList.children).map((item) =>
-                        item.getAttribute("data-index")
-                    );
-                    planOrderInput.value = JSON.stringify(order);
-                },
+        <!-- Main Content -->
+        <div class="container-fluid">
+            <!-- Dashboard Section -->
+            <div id="dashboard-section" class="section-content active">
+                <!-- Storage Info -->
+                <div class="alert alert-info d-flex align-items-center" role="alert">
+                    <i class="fas fa-database me-2"></i>
+                    <div>
+                        <strong>Cloud Storage:</strong> Files are stored in S3-compatible object storage for optimal performance.
+                    </div>
+                </div>
+
+                <!-- Statistics Cards -->
+                <div class="row mb-4">
+                    <div class="col-xl-4 col-md-6 mb-4">
+                        <div class="card h-100 py-2 stats-card courses">
+                            <div class="card-body">
+                                <div class="row no-gutters align-items-center">
+                                    <div class="col mr-2">
+                                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">
+                                            Total Courses</div>
+                                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ courses|length }}</div>
+                                    </div>
+                                    <div class="col-auto">
+                                        <i class="fas fa-book stats-icon text-primary"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-xl-4 col-md-6 mb-4">
+                        <div class="card h-100 py-2 stats-card plans">
+                            <div class="card-body">
+                                <div class="row no-gutters align-items-center">
+                                    <div class="col mr-2">
+                                        <div class="text-xs font-weight-bold text-info text-uppercase mb-1">
+                                            Total Study Plans</div>
+                                        <div class="h5 mb-0 font-weight-bold text-gray-800">
+                                            {% set ns = namespace(total_plans=0) %}
+                                            {% for course in courses %}
+                                                {% set ns.total_plans = ns.total_plans + course.plans|length %}
+                                            {% endfor %}
+                                            {{ ns.total_plans }}
+                                        </div>
+                                    </div>
+                                    <div class="col-auto">
+                                        <i class="fas fa-file-pdf stats-icon text-info"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-xl-4 col-md-6 mb-4">
+                        <div class="card h-100 py-2 stats-card files">
+                            <div class="card-body">
+                                <div class="row no-gutters align-items-center">
+                                    <div class="col mr-2">
+                                        <div class="text-xs font-weight-bold text-success text-uppercase mb-1">
+                                            Storage Usage</div>
+                                        <div class="h5 mb-0 font-weight-bold text-gray-800">
+                                            {% set ns = namespace(total_size=0) %}
+                                            {% for course in courses %}
+                                                {% for plan in course.plans %}
+                                                    {% set ns.total_size = ns.total_size + 1 %}
+                                                {% endfor %}
+                                            {% endfor %}
+                                            {{ ns.total_size }} PDF Files
+                                        </div>
+                                    </div>
+                                    <div class="col-auto">
+                                        <i class="fas fa-database stats-icon text-success"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Add Course Section -->
+            <div id="add-course-section" class="section-content">
+                <div class="card mb-4">
+                    <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                        <h6 class="m-0 font-weight-bold text-primary">Add New Course</h6>
+                    </div>
+                    <div class="card-body">
+                        <form action="/add-course" method="post" class="row g-3">
+                            <div class="col-md-8">
+                                <label for="title" class="form-label">Course Title</label>
+                                <input type="text" id="title" name="title" class="form-control" placeholder="Enter course title" required>
+                            </div>
+                            <div class="col-md-4 d-flex align-items-end">
+                                <button class="btn btn-primary w-100">
+                                    <i class="fas fa-plus me-1"></i> Add Course
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- View Courses Section -->
+            <div id="view-courses-section" class="section-content">
+                <div class="card mb-4">
+                    <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                        <h6 class="m-0 font-weight-bold text-primary">Manage Courses</h6>
+                        <span class="badge bg-primary rounded-pill">{{ courses|length }} courses</span>
+                    </div>
+                    <div class="card-body">
+                        {% if courses %}
+                        <div class="list-group">
+                            {% for course in courses %}
+                            <div class="list-group-item list-group-item-action flex-column align-items-start mb-2">
+                                <div class="d-flex w-100 justify-content-between align-items-center">
+                                    <div class="d-flex align-items-center">
+                                        <h5 class="mb-1">{{ course.title }}</h5>
+                                        <span class="badge bg-info ms-2">{{ course.plans|length }} plans</span>
+                                    </div>
+                                    <div>
+                                        <button class="btn btn-sm btn-warning me-1" data-bs-toggle="modal" data-bs-target="#editCourseModal" 
+                                                data-course-index="{{ loop.index0 }}" data-course-title="{{ course.title }}">
+                                            <i class="fas fa-edit"></i> Edit
+                                        </button>
+                                        <form action="/delete-course" method="post" class="d-inline">
+                                            <input type="hidden" name="course_index" value="{{ loop.index0 }}">
+                                            <button class="btn btn-sm btn-danger" type="submit" onclick="return confirm('Are you sure you want to delete this course and all its plans? This will also delete all associated files from storage.')">
+                                                <i class="fas fa-trash"></i> Delete
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <div class="text-center py-4">
+                            <i class="fas fa-book-open fa-3x text-muted mb-3"></i>
+                            <h5 class="text-muted">No courses added yet</h5>
+                            <p class="text-muted">Add your first course using the "Add Course" section.</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Add Plan Section -->
+            <div id="add-plan-section" class="section-content">
+                <div class="card mb-4">
+                    <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                        <h6 class="m-0 font-weight-bold text-primary">Add New Plan</h6>
+                    </div>
+                    <div class="card-body">
+                        {% if courses %}
+                        <form action="/add-plan" method="post" enctype="multipart/form-data" class="row g-3">
+                            <div class="col-md-4">
+                                <label for="course_index" class="form-label">Select Course</label>
+                                <select id="course_index" name="course_index" class="form-select" required>
+                                    <option value="" selected disabled>Select a course</option>
+                                    {% for course in courses %}
+                                    <option value="{{ loop.index0 }}">{{ course.title }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="plan_name" class="form-label">Plan Name</label>
+                                <input type="text" id="plan_name" name="name" class="form-control" placeholder="Plan name" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="plan_file" class="form-label">PDF File</label>
+                                <input type="file" id="plan_file" name="file" class="form-control" accept=".pdf" required>
+                            </div>
+                            <div class="col-12">
+                                <button class="btn btn-success">
+                                    <i class="fas fa-plus me-1"></i> Add Plan
+                                </button>
+                            </div>
+                        </form>
+                        {% else %}
+                        <div class="alert alert-warning" role="alert">
+                            <i class="fas fa-exclamation-triangle me-2"></i> You need to add at least one course before you can add plans.
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- View Plans Section -->
+            <div id="view-plans-section" class="section-content">
+                <div class="card mb-4">
+                    <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                        <h6 class="m-0 font-weight-bold text-primary">Manage Plans</h6>
+                        <span class="badge bg-info rounded-pill">
+                            {% set ns = namespace(total_plans=0) %}
+                            {% for course in courses %}
+                                {% set ns.total_plans = ns.total_plans + course.plans|length %}
+                            {% endfor %}
+                            {{ ns.total_plans }} plans
+                        </span>
+                    </div>
+                    <div class="card-body">
+                        {% if courses and courses|selectattr('plans')|list|length > 0 %}
+                            {% for course in courses %}
+                                {% if course.plans %}
+                                <h5 class="mb-3">{{ course.title }}</h5>
+                                <div class="list-group mb-4">
+                                    {% for plan in course.plans %}
+                                    <div class="list-group-item list-group-item-action flex-column align-items-start mb-2">
+                                        <div class="d-flex w-100 justify-content-between align-items-center">
+                                            <div class="d-flex align-items-center">
+                                                <i class="fas fa-file-pdf text-danger me-2"></i>
+                                                {{ plan.name }}
+                                                <span class="badge storage-badge ms-2" title="Stored in cloud">
+                                                    <i class="fas fa-cloud me-1"></i> S3
+                                                </span>
+                                            </div>
+                                            <div>
+                                                <a href="/download/{{ plan.filename }}" class="btn btn-sm btn-info me-1" target="_blank">
+                                                    <i class="fas fa-eye"></i> View
+                                                </a>
+                                                <button class="btn btn-sm btn-warning me-1" data-bs-toggle="modal" data-bs-target="#editPlanModal" 
+                                                        data-course-index="{{ loop.index0 }}" data-plan-index="{{ loop.index0 }}" 
+                                                        data-plan-name="{{ plan.name }}">
+                                                    <i class="fas fa-edit"></i> Edit
+                                                </button>
+                                                <form action="/delete-plan" method="post" class="d-inline">
+                                                    <input type="hidden" name="course_index" value="{{ loop.index0 }}">
+                                                    <input type="hidden" name="plan_index" value="{{ loop.index0 }}">
+                                                    <button class="btn btn-sm btn-danger" type="submit" onclick="return confirm('Are you sure you want to delete this plan? This will also delete the file from storage.')">
+                                                        <i class="fas fa-trash"></i> Delete
+                                                    </button>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                                {% endif %}
+                            {% endfor %}
+                        {% else %}
+                        <div class="text-center py-4">
+                            <i class="fas fa-file-pdf fa-3x text-muted mb-3"></i>
+                            <h5 class="text-muted">No plans added yet</h5>
+                            <p class="text-muted">Add your first plan using the "Add Plan" section.</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Course Modal -->
+    <div class="modal fade" id="editCourseModal" tabindex="-1" aria-labelledby="editCourseModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="editCourseModalLabel">Edit Course</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form action="/edit-course" method="post">
+                    <div class="modal-body">
+                        <input type="hidden" id="edit_course_index" name="course_index">
+                        <div class="mb-3">
+                            <label for="edit_course_title" class="form-label">Course Title</label>
+                            <input type="text" class="form-control" id="edit_course_title" name="title" required>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save Changes</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Plan Modal -->
+    <div class="modal fade" id="editPlanModal" tabindex="-1" aria-labelledby="editPlanModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="editPlanModalLabel">Edit Plan</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form action="/edit-plan" method="post" enctype="multipart/form-data">
+                    <div class="modal-body">
+                        <input type="hidden" id="edit_plan_course_index" name="course_index">
+                        <input type="hidden" id="edit_plan_index" name="plan_index">
+                        <div class="mb-3">
+                            <label for="edit_plan_name" class="form-label">Plan Name</label>
+                            <input type="text" class="form-control" id="edit_plan_name" name="name" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="edit_plan_file" class="form-label">Update PDF File (Optional)</label>
+                            <input type="file" class="form-control" id="edit_plan_file" name="file" accept=".pdf">
+                            <div class="form-text">Leave empty to keep the current file.</div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save Changes</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div class="toast align-items-center text-white bg-success border-0" role="alert" aria-live="assertive" aria-atomic="true" id="successToast">
+        <div class="d-flex">
+            <div class="toast-body">
+                <i class="fas fa-check-circle me-2"></i> Operation completed successfully
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            // Toggle sidebar on mobile
+            document.getElementById('sidebarToggle').addEventListener('click', function() {
+                document.querySelector('.sidebar').classList.toggle('show');
             });
+            
+            // Section navigation
+            document.querySelectorAll('.sidebar-item[data-section]').forEach(item => {
+                item.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    
+                    // Update active state
+                    document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+                    this.classList.add('active');
+                    
+                    // Show selected section
+                    const sectionId = this.getAttribute('data-section');
+                    document.querySelectorAll('.section-content').forEach(section => {
+                        section.classList.remove('active');
+                    });
+                    document.getElementById(sectionId + '-section').classList.add('active');
+                });
+            });
+            
+            // Edit Course Modal
+            const editCourseModal = document.getElementById('editCourseModal');
+            if (editCourseModal) {
+                editCourseModal.addEventListener('show.bs.modal', function (event) {
+                    const button = event.relatedTarget;
+                    const courseIndex = button.getAttribute('data-course-index');
+                    const courseTitle = button.getAttribute('data-course-title');
+                    
+                    const modal = this;
+                    modal.querySelector('#edit_course_index').value = courseIndex;
+                    modal.querySelector('#edit_course_title').value = courseTitle;
+                });
+            }
+            
+            // Edit Plan Modal
+            const editPlanModal = document.getElementById('editPlanModal');
+            if (editPlanModal) {
+                editPlanModal.addEventListener('show.bs.modal', function (event) {
+                    const button = event.relatedTarget;
+                    const courseIndex = button.getAttribute('data-course-index');
+                    const planIndex = button.getAttribute('data-plan-index');
+                    const planName = button.getAttribute('data-plan-name');
+                    
+                    const modal = this;
+                    modal.querySelector('#edit_plan_course_index').value = courseIndex;
+                    modal.querySelector('#edit_plan_index').value = planIndex;
+                    modal.querySelector('#edit_plan_name').value = planName;
+                });
+            }
+            
+            // Show toast notification if URL has success parameter
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('success')) {
+                const toast = new bootstrap.Toast(document.getElementById('successToast'));
+                toast.show();
+            }
         });
-    });
-</script>
-
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    </script>
 </body>
-                            </html>
+</html>
