@@ -365,15 +365,29 @@ async def edit_plan(course_index: int = Form(...), plan_index: int = Form(...), 
         return RedirectResponse(url="/admin", status_code=303)
     raise HTTPException(status_code=404, detail="Plan not found")
 
-# FastAPI endpoint that returns a short-lived presigned URL
+@app.get("/dl/{filename}")
+async def download_pdf(filename: str):
+    try:
+        url = s3.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": S3_BUCKET, "Key": filename},
+            ExpiresIn=3600,
+        )
+        logger.info(f"Generated presigned URL: {url}")
+        return RedirectResponse(url=url)
+    except Exception as e:
+        logger.error(f"Presigned URL generation failed: {e}")
+        raise HTTPException(status_code=500, detail="Could not generate download link.")
+        
 @app.get("/download/{filename}")
 async def download_pdf(filename: str):
-    url = s3.generate_presigned_url(
-        "get_object",
-        Params={"Bucket": S3_BUCKET, "Key": filename},
-        ExpiresIn=60  # 1 minute
-    )
-    return RedirectResponse(url=url)
+    try:
+        local_path = os.path.join(temp_dir, filename)
+        download_from_s3(filename, local_path)
+        return FileResponse(local_path, media_type="application/pdf", filename=filename)
+    except Exception as e:
+        logger.error(f"Download failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to download file.")
 
 @app.post("/delete-course")
 async def delete_course(course_index: int = Form(...)):
