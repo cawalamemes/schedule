@@ -59,8 +59,8 @@ s3 = boto3.client(
     "s3",
     region_name="us-east-1",
     endpoint_url="https://objstorage.leapcell.io",
-    aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY")
+    aws_access_key_id=os.getenv("ACCESS_KEY_ID"),
+    aws_secret_access_key=os.getenv("SECRET_ACCESS_KEY")
 )
 
 S3_BUCKET = os.getenv("S3_BUCKET")
@@ -182,7 +182,7 @@ def download_from_s3(s3_key: str, local_path: str):
         logger.info(f"Downloaded {s3_key} from S3")
     except Exception as e:
         logger.error(f"Error downloading from S3: {e}")
-        raise HTTPException(status_code=500, detail="Failed to download file from storage.")
+        raise HTTPException(status_code=500, detail=f"Failed to download file from storage, {e}")
 
 def delete_from_s3(s3_key: str):
     try:
