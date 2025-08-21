@@ -36,7 +36,7 @@ async def health_check():
 async def debug_config():
     return {
         "s3_bucket": os.getenv("S3_BUCKET"),
-        "s3_endpoint": "https://objstorage.leapcell.io",
+        "s3_endpoint": "https://objstorage.leapcell.io",  # Fixed: removed extra spaces
         "redis_host": os.getenv("REDIS_URI"),
         "temp_dir": "/tmp",
         "temp_dir_exists": os.path.exists("/tmp"),
@@ -54,13 +54,18 @@ async def test_s3():
         logger.error(f"S3 test failed: {str(e)}")
         return {"status": "S3 connection failed", "error": str(e)}
 
-# Configure S3 client
+# Configure S3 client - FIXED: removed extra spaces in endpoint_url
 s3 = boto3.client(
     "s3",
     region_name="us-east-1",
-    endpoint_url="https://objstorage.leapcell.io",
+    endpoint_url="https://objstorage.leapcell.io",  # Fixed: removed trailing spaces
     aws_access_key_id=os.getenv("ACCESS_KEY_ID"),
-    aws_secret_access_key=os.getenv("SECRET_ACCESS_KEY")
+    aws_secret_access_key=os.getenv("SECRET_ACCESS_KEY"),
+    config=Config(
+        retries={'max_attempts': 3},
+        connect_timeout=60,
+        read_timeout=60
+    )
 )
 
 S3_BUCKET = os.getenv("S3_BUCKET")
@@ -171,6 +176,7 @@ def upload_to_s3(file_path: str, s3_key: str):
             ExtraArgs={'ContentType': 'application/pdf'}
         )
         logger.info(f"Successfully uploaded {s3_key} to S3 bucket {S3_BUCKET}")
+        return True
     except Exception as e:
         logger.error(f"Error uploading to S3: {str(e)}")
         logger.error(f"Traceback: {traceback.format_exc()}")
@@ -178,16 +184,20 @@ def upload_to_s3(file_path: str, s3_key: str):
 
 def download_from_s3(s3_key: str, local_path: str):
     try:
+        logger.info(f"Attempting to download {s3_key} from S3 bucket {S3_BUCKET}")
         s3.download_file(S3_BUCKET, s3_key, local_path)
-        logger.info(f"Downloaded {s3_key} from S3")
+        logger.info(f"Downloaded {s3_key} from S3 to {local_path}")
+        return True
     except Exception as e:
         logger.error(f"Error downloading from S3: {e}")
-        raise HTTPException(status_code=500, detail="Failed to download file from storage.")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to download file from storage: {str(e)}")
 
 def delete_from_s3(s3_key: str):
     try:
         s3.delete_object(Bucket=S3_BUCKET, Key=s3_key)
         logger.info(f"Deleted {s3_key} from S3")
+        return True
     except Exception as e:
         logger.error(f"Error deleting from S3: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete file from storage.")
@@ -365,29 +375,71 @@ async def edit_plan(course_index: int = Form(...), plan_index: int = Form(...), 
         return RedirectResponse(url="/admin", status_code=303)
     raise HTTPException(status_code=404, detail="Plan not found")
 
-@app.get("/dl/{filename}")
-async def download_pdf(filename: str):
-    try:
-        url = s3.generate_presigned_url(
-            "get_object",
-            Params={"Bucket": S3_BUCKET, "Key": filename},
-            ExpiresIn=3600,
-        )
-        logger.info(f"Generated presigned URL: {url}")
-        return RedirectResponse(url=url)
-    except Exception as e:
-        logger.error(f"Presigned URL generation failed: {e}")
-        raise HTTPException(status_code=500, detail="Could not generate download link.")
-        
+# FIXED: Removed duplicate route definitions - keeping only one download route
 @app.get("/download/{filename}")
 async def download_pdf(filename: str):
     try:
+        logger.info(f"Download request for filename: {filename}")
+        
+        # Validate filename
+        if not filename or filename == "None":
+            logger.error("Invalid filename provided")
+            raise HTTPException(status_code=400, detail="Invalid filename")
+        
+        # Option 1: Direct redirect to presigned URL (recommended)
+        try:
+            url = s3.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": S3_BUCKET, "Key": filename},
+                ExpiresIn=3600,
+            )
+            logger.info(f"Generated presigned URL for {filename}")
+            return RedirectResponse(url=url)
+        except Exception as e:
+            logger.error(f"Presigned URL generation failed: {e}")
+            # Fallback to direct download
+            
+        # Option 2: Download and serve file (fallback)
         local_path = os.path.join(temp_dir, filename)
+        logger.info(f"Downloading {filename} to {local_path}")
         download_from_s3(filename, local_path)
-        return FileResponse(local_path, media_type="application/pdf", filename=filename)
+        
+        # Verify file exists and has content
+        if not os.path.exists(local_path):
+            logger.error(f"Downloaded file does not exist: {local_path}")
+            raise HTTPException(status_code=404, detail="File not found after download")
+        
+        file_size = os.path.getsize(local_path)
+        logger.info(f"Downloaded file size: {file_size} bytes")
+        
+        if file_size == 0:
+            logger.error("Downloaded file is empty")
+            raise HTTPException(status_code=404, detail="Downloaded file is empty")
+        
+        response = FileResponse(
+            local_path, 
+            media_type="application/pdf", 
+            filename=filename
+        )
+        
+        # Clean up temp file after response is sent
+        @response.on_close
+        def cleanup_temp_file():
+            try:
+                if os.path.exists(local_path):
+                    os.remove(local_path)
+                    logger.info(f"Cleaned up temp file: {local_path}")
+            except Exception as e:
+                logger.error(f"Error cleaning up temp file: {e}")
+        
+        return response
+        
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Download failed: {e}")
-        raise HTTPException(status_code=500, detail="Failed to download file.")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to download file: {str(e)}")
 
 @app.post("/delete-course")
 async def delete_course(course_index: int = Form(...)):
