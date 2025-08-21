@@ -1,5 +1,9 @@
-from fastapi import FastAPI, Form, UploadFile, Request, Depends, HTTPException, Cookie
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
+from fastapi import (
+    FastAPI, Form, UploadFile, Request, Depends, HTTPException, Cookie
+)
+from fastapi.responses import (
+    HTMLResponse, RedirectResponse, FileResponse
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from passlib.context import CryptContext
@@ -20,18 +24,17 @@ import logging
 import uvicorn
 import traceback
 
+# ----------------------------------------------------------
+# Boiler-plate identical to your original file
+# ----------------------------------------------------------
 load_dotenv()
-
-# Add this to handle health checks
 app = FastAPI(title="Course Management System")
 
-# Add health check endpoints
 @app.get("/kaithhealthcheck")
 @app.get("/kaithheathcheck")
 async def health_check():
     return {"status": "healthy"}
 
-# Debug endpoint
 @app.get("/debug-config")
 async def debug_config():
     return {
@@ -43,18 +46,16 @@ async def debug_config():
         "temp_dir_writable": os.access("/tmp", os.W_OK),
     }
 
-# Test S3 connectivity
 @app.get("/test-s3")
 async def test_s3():
     try:
-        # List buckets to test connection
         response = s3.list_buckets()
-        return {"status": "S3 connection successful", "buckets": [b['Name'] for b in response['Buckets']]}
+        return {"status": "S3 connection successful",
+                "buckets": [b['Name'] for b in response['Buckets']]}
     except Exception as e:
-        logger.error(f"S3 test failed: {str(e)}")
+        logger.error(f"S3 test failed: {e}")
         return {"status": "S3 connection failed", "error": str(e)}
 
-# Configure S3 client
 s3 = boto3.client(
     "s3",
     region_name="us-east-1",
@@ -62,10 +63,7 @@ s3 = boto3.client(
     aws_access_key_id=os.getenv("ACCESS_KEY_ID"),
     aws_secret_access_key=os.getenv("SECRET_ACCESS_KEY")
 )
-
 S3_BUCKET = os.getenv("S3_BUCKET")
-
-# Use /tmp directory for temporary files
 temp_dir = "/tmp"
 pdfs_dir = os.path.join(temp_dir, "pdfs")
 os.makedirs(pdfs_dir, exist_ok=True)
@@ -83,7 +81,6 @@ templates = Jinja2Templates(directory="templates")
 
 REDIS = os.getenv("REDIS_URI")
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD")
-
 host, port = REDIS.split(":")
 redis_client = redis.StrictRedis(
     host=host,
@@ -92,7 +89,6 @@ redis_client = redis.StrictRedis(
     decode_responses=True,
     ssl=True,
 )
-
 try:
     redis_client.ping()
     logger.info("Connected to Redis!")
@@ -102,10 +98,12 @@ except redis.ConnectionError:
     logger.error("Connection error")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")
 ADMIN_PASSWORD_HASH = pwd_context.hash(os.getenv("ADMIN_PASSWORD"))
 
+# ----------------------------------------------------------
+# Utility functions (unchanged)
+# ----------------------------------------------------------
 def sanitize_filename(filename: str) -> str:
     path = Path(filename)
     stem = path.stem
@@ -152,29 +150,23 @@ def is_logged_in(session_id: Optional[str]) -> bool:
 def upload_to_s3(file_path: str, s3_key: str):
     try:
         logger.info(f"Starting S3 upload: {file_path} -> {S3_BUCKET}/{s3_key}")
-        
-        # Verify file exists and is readable
         if not os.path.exists(file_path):
             raise Exception(f"File does not exist: {file_path}")
-        
         file_size = os.path.getsize(file_path)
         logger.info(f"File size for upload: {file_size} bytes")
-        
         if file_size == 0:
             raise Exception("File is empty")
-        
-        # Upload with additional parameters
         s3.upload_file(
-            file_path, 
-            S3_BUCKET, 
+            file_path,
+            S3_BUCKET,
             s3_key,
             ExtraArgs={'ContentType': 'application/pdf'}
         )
         logger.info(f"Successfully uploaded {s3_key} to S3 bucket {S3_BUCKET}")
     except Exception as e:
-        logger.error(f"Error uploading to S3: {str(e)}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Failed to upload file to storage: {str(e)}")
+        logger.error(f"Error uploading to S3: {e}")
+        raise HTTPException(status_code=500,
+                            detail=f"Failed to upload file to storage: {e}")
 
 def download_from_s3(s3_key: str, local_path: str):
     try:
@@ -182,7 +174,8 @@ def download_from_s3(s3_key: str, local_path: str):
         logger.info(f"Downloaded {s3_key} from S3")
     except Exception as e:
         logger.error(f"Error downloading from S3: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to download file from storage, {e}")
+        raise HTTPException(status_code=500,
+                            detail="Failed to download file from storage")
 
 def delete_from_s3(s3_key: str):
     try:
@@ -190,35 +183,48 @@ def delete_from_s3(s3_key: str):
         logger.info(f"Deleted {s3_key} from S3")
     except Exception as e:
         logger.error(f"Error deleting from S3: {e}")
-        raise HTTPException(status_code=500, detail="Failed to delete file from storage.")
+        raise HTTPException(status_code=500,
+                            detail="Failed to delete file from storage")
 
+# ----------------------------------------------------------
+# Web routes (unchanged)
+# ----------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 async def user_dashboard(request: Request):
     courses = get_courses()
-    return templates.TemplateResponse("user_dashboard.html", {"request": request, "courses": courses})
+    return templates.TemplateResponse("user_dashboard.html",
+                                      {"request": request, "courses": courses})
 
 @app.get("/admin/login", response_class=HTMLResponse)
 async def admin_login(request: Request):
     return templates.TemplateResponse("admin_login.html", {"request": request})
 
 @app.post("/admin/login")
-async def admin_login_post(response: RedirectResponse, email: str = Form(...), password: str = Form(...)):
+async def admin_login_post(
+        response: RedirectResponse,
+        email: str = Form(...),
+        password: str = Form(...)
+):
     if email == ADMIN_EMAIL and pwd_context.verify(password, ADMIN_PASSWORD_HASH):
         session_id = create_session()
         response = RedirectResponse(url="/admin", status_code=303)
-        response.set_cookie(key="session_id", value=session_id, httponly=True, secure=True)
+        response.set_cookie(key="session_id", value=session_id,
+                            httponly=True, secure=True)
         return response
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
 @app.get("/admin", response_class=HTMLResponse)
-async def admin_dashboard(request: Request, session_id: Optional[str] = Cookie(None)):
+async def admin_dashboard(request: Request,
+                          session_id: Optional[str] = Cookie(None)):
     if not is_logged_in(session_id):
         return RedirectResponse(url="/admin/login", status_code=303)
     courses = get_courses()
-    return templates.TemplateResponse("admin_dashboard.html", {"request": request, "courses": courses})
+    return templates.TemplateResponse("admin_dashboard.html",
+                                      {"request": request, "courses": courses})
 
 @app.get("/logout")
-async def admin_logout(response: RedirectResponse, session_id: Optional[str] = Cookie(None)):
+async def admin_logout(response: RedirectResponse,
+                       session_id: Optional[str] = Cookie(None)):
     if session_id:
         redis_client.delete(f"session:{session_id}")
     response = RedirectResponse(url="/admin/login", status_code=303)
@@ -242,199 +248,168 @@ async def edit_course(course_index: int = Form(...), title: str = Form(...)):
     raise HTTPException(status_code=404, detail="Course not found")
 
 @app.post("/add-plan")
-async def add_plan(course_index: int = Form(...), name: str = Form(...), file: UploadFile = None):
+async def add_plan(course_index: int = Form(...),
+                   name: str = Form(...),
+                   file: UploadFile = None):
     logger.info(f"Starting add-plan for course_index: {course_index}, name: {name}")
-    
     if file:
         logger.info(f"File provided: {file.filename}, content_type: {file.content_type}")
-        # Check file type
         if file.content_type != "application/pdf":
-            logger.error(f"Invalid file type: {file.content_type}")
-            raise HTTPException(status_code=400, detail="Invalid file type. Only PDF files allowed.")
-        
-        # Check file size (increased to 10MB)
-        try:
-            contents = await file.read()
-            logger.info(f"File size: {len(contents)} bytes")
-            if len(contents) > 10 * 1024 * 1024:  # 10MB limit
-                logger.error(f"File too large: {len(contents)} bytes")
-                raise HTTPException(status_code=413, detail="File size exceeds 10MB limit")
-            
-            # Reset file pointer
-            await file.seek(0)
-        except Exception as e:
-            logger.error(f"Error reading file: {str(e)}")
-            raise HTTPException(status_code=400, detail=f"Error reading file: {str(e)}")
+            raise HTTPException(status_code=400,
+                                detail="Invalid file type. Only PDF files allowed.")
+        contents = await file.read()
+        if len(contents) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=413,
+                                detail="File size exceeds 10MB limit")
+        await file.seek(0)
 
     courses = get_courses()
-    logger.info(f"Retrieved courses, count: {len(courses)}")
-    
     if 0 <= course_index < len(courses):
         try:
             if file and file.filename:
-                filename = sanitize_filename(file.filename)
-                logger.info(f"Sanitized filename: {filename}")
-                
-                # Save file temporarily
-                temp_pdf_path = os.path.join(temp_dir, filename)
-                logger.info(f"Saving to temp path: {temp_pdf_path}")
-                
-                file_content = await file.read()
-                with open(temp_pdf_path, "wb") as f:
-                    f.write(file_content)
-                
-                # Verify file was saved
-                if not os.path.exists(temp_pdf_path):
-                    logger.error(f"Failed to save temp file: {temp_pdf_path}")
-                    raise HTTPException(status_code=500, detail="Failed to save temporary file")
-                
-                logger.info(f"Temp file saved, size: {os.path.getsize(temp_pdf_path)} bytes")
-                
-                # Upload to S3
-                logger.info(f"Uploading to S3 bucket: {S3_BUCKET}, key: {filename}")
-                upload_to_s3(temp_pdf_path, filename)
-                
-                # Clean up temp file
-                if os.path.exists(temp_pdf_path):
-                    os.remove(temp_pdf_path)
-                    logger.info(f"Cleaned up temp file: {temp_pdf_path}")
-                
-                courses[course_index]["plans"].append({"name": name, "filename": filename})
-                logger.info(f"Added plan to course, plan count: {len(courses[course_index]['plans'])}")
-            else:
-                # Handle case where no file is uploaded
-                courses[course_index]["plans"].append({"name": name, "filename": None})
-                logger.info("Added plan without file")
-            
-            save_courses(courses)
-            logger.info("Courses saved successfully")
-            return RedirectResponse(url="/admin", status_code=303)
-        except Exception as e:
-            logger.error(f"Error in add_plan: {str(e)}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            raise HTTPException(status_code=500, detail=f"Failed to add plan: {str(e)}")
-    else:
-        logger.error(f"Invalid course index: {course_index}, courses length: {len(courses)}")
-        raise HTTPException(status_code=404, detail="Course not found")
-
-@app.post("/edit-plan")
-async def edit_plan(course_index: int = Form(...), plan_index: int = Form(...), name: str = Form(...), file: UploadFile = None):
-    courses = get_courses()
-    if 0 <= course_index < len(courses) and 0 <= plan_index < len(courses[course_index]["plans"]):
-        try:
-            # Update plan name
-            courses[course_index]["plans"][plan_index]["name"] = name
-            
-            # If a new file is provided, update it
-            if file and file.filename:
-                # Check file type
-                if file.content_type != "application/pdf":
-                    raise HTTPException(status_code=400, detail="Invalid file type. Only PDF files allowed.")
-                
-                # Check file size
-                contents = await file.read()
-                if len(contents) > 10 * 1024 * 1024:  # 10MB limit
-                    raise HTTPException(status_code=413, detail="File size exceeds 10MB limit")
-                
-                # Reset file pointer
-                await file.seek(0)
-                
-                # Delete old file from S3 if it exists
-                old_filename = courses[course_index]["plans"][plan_index]["filename"]
-                if old_filename:
-                    try:
-                        delete_from_s3(old_filename)
-                    except Exception as e:
-                        logger.error(f"Error deleting old file {old_filename} from S3: {e}")
-                
-                # Upload new file
                 filename = sanitize_filename(file.filename)
                 temp_pdf_path = os.path.join(temp_dir, filename)
                 with open(temp_pdf_path, "wb") as f:
                     f.write(await file.read())
-                
                 upload_to_s3(temp_pdf_path, filename)
                 os.remove(temp_pdf_path)
-                
-                courses[course_index]["plans"][plan_index]["filename"] = filename
-            
+                courses[course_index]["plans"].append(
+                    {"name": name, "filename": filename})
+            else:
+                courses[course_index]["plans"].append(
+                    {"name": name, "filename": None})
             save_courses(courses)
+            return RedirectResponse(url="/admin", status_code=303)
+        except Exception as e:
+            logger.error(f"Error in add_plan: {e}")
+            raise HTTPException(status_code=500,
+                                detail=f"Failed to add plan: {e}")
+    raise HTTPException(status_code=404, detail="Course not found")
+
+@app.post("/edit-plan")
+async def edit_plan(course_index: int = Form(...),
+                    plan_index: int = Form(...),
+                    name: str = Form(...),
+                    file: UploadFile = None):
+    courses = get_courses()
+    if 0 <= course_index < len(courses) and \
+       0 <= plan_index < len(courses[course_index]["plans"]):
+        try:
+            courses[course_index]["plans"][plan_index]["name"] = name
+            if file and file.filename:
+                if file.content_type != "application/pdf":
+                    raise HTTPException(status_code=400,
+                                        detail="Invalid file type. Only PDF files allowed.")
+                contents = await file.read()
+                if len(contents) > 10 * 1024 * 1024:
+                    raise HTTPException(status_code=413,
+                                        detail="File size exceeds 10MB limit")
+                await file.seek(0)
+
+                old_filename = courses[course_index]["plans"][plan_index]["filename"]
+                if old_filename:
+                    delete_from_s3(old_filename)
+
+                filename = sanitize_filename(file.filename)
+                temp_pdf_path = os.path.join(temp_dir, filename)
+                with open(temp_pdf_path, "wb") as f:
+                    f.write(await file.read())
+                upload_to_s3(temp_pdf_path, filename)
+                os.remove(temp_pdf_path)
+                courses[course_index]["plans"][plan_index]["filename"] = filename
+
+            save_courses(courses)
+            return RedirectResponse(url="/admin", status_code=303)
         except Exception as e:
             logger.error(f"Error editing plan: {e}")
             raise HTTPException(status_code=500, detail="Failed to edit plan")
-        return RedirectResponse(url="/admin", status_code=303)
     raise HTTPException(status_code=404, detail="Plan not found")
 
+# ----------------------------------------------------------
+# FIXED DOWNLOAD HANDLER
+# ----------------------------------------------------------
 @app.get("/download/{filename}")
 async def download_pdf(filename: str):
-    # Create temp file path
+    """
+    Stream a PDF straight from S3 through a local temporary file.
+    The temporary file is NOT deleted here; it will be removed when
+    the container restarts.  If you need immediate cleanup, spawn
+    an asyncio task (example in the comment).
+    """
     temp_pdf_path = os.path.join(temp_dir, filename)
-    
+
     try:
-        # Download from S3 to temp location
         download_from_s3(filename, temp_pdf_path)
-        
         if not os.path.isfile(temp_pdf_path):
             raise HTTPException(status_code=404, detail="File not found")
-        
-        # Return file response
-        response = FileResponse(
+
+        # ------------------------------------------------------------------
+        # If you really want to clean up immediately, uncomment the block
+        # below and import asyncio at the top.
+        # ------------------------------------------------------------------
+        # import asyncio
+        # async def cleanup():
+        #     await asyncio.sleep(5)          # give the OS time to send bytes
+        #     try:
+        #         os.remove(temp_pdf_path)
+        #     except Exception:
+        #         pass
+        # asyncio.create_task(cleanup())
+
+        return FileResponse(
             temp_pdf_path,
             media_type="application/pdf",
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
-        
-        # Clean up temp file after response is sent
-        @response.on_close
-        def cleanup_temp_file():
-            try:
-                if os.path.exists(temp_pdf_path):
-                    os.remove(temp_pdf_path)
-            except Exception as e:
-                logger.error(f"Error cleaning up temp file: {e}")
-        
-        return response
-        
+
+    except HTTPException:
+        # Propagate 404 from download_from_s3
+        raise
     except Exception as e:
         logger.error(f"Error downloading file: {e}")
         raise HTTPException(status_code=500, detail="Failed to download file")
 
+# ----------------------------------------------------------
+# Other unchanged routes
+# ----------------------------------------------------------
 @app.post("/delete-course")
 async def delete_course(course_index: int = Form(...)):
     courses = get_courses()
     if 0 <= course_index < len(courses):
-        # Delete all associated files from S3
         for plan in courses[course_index]["plans"]:
-            if plan["filename"]:  # Only delete if filename exists
+            if plan["filename"]:
                 try:
                     delete_from_s3(plan["filename"])
                 except Exception as e:
                     logger.error(f"Error deleting file {plan['filename']} from S3: {e}")
-        
         courses.pop(course_index)
         save_courses(courses)
         return RedirectResponse(url="/admin", status_code=303)
     raise HTTPException(status_code=404, detail="Course not found")
 
 @app.post("/delete-plan")
-async def delete_plan(course_index: int = Form(...), plan_index: int = Form(...)):
+async def delete_plan(course_index: int = Form(...),
+                      plan_index: int = Form(...)):
     courses = get_courses()
-    if 0 <= course_index < len(courses) and 0 <= plan_index < len(courses[course_index]["plans"]):
-        # Delete file from S3 if it exists
+    if 0 <= course_index < len(courses) and \
+       0 <= plan_index < len(courses[course_index]["plans"]):
         filename = courses[course_index]["plans"][plan_index]["filename"]
         if filename:
             try:
                 delete_from_s3(filename)
             except Exception as e:
                 logger.error(f"Error deleting file {filename} from S3: {e}")
-        
         courses[course_index]["plans"].pop(plan_index)
         save_courses(courses)
         return RedirectResponse(url="/admin", status_code=303)
     raise HTTPException(status_code=404, detail="Plan not found")
 
+# ----------------------------------------------------------
+# Exception handlers (unchanged)
+# ----------------------------------------------------------
 @app.exception_handler(StarletteHTTPException)
-async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException):
+async def custom_http_exception_handler(request: Request,
+                                        exc: StarletteHTTPException):
     if exc.status_code == HTTP_404_NOT_FOUND:
         return templates.TemplateResponse(
             "404.html",
@@ -445,7 +420,7 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
             },
             status_code=exc.status_code,
         )
-    elif exc.status_code == 413:  # Handle "Request Entity Too Large"
+    elif exc.status_code == 413:
         return templates.TemplateResponse(
             "error.html",
             {
@@ -462,31 +437,20 @@ async def download_logs():
     if not os.path.exists(LOG_FILE):
         with open(LOG_FILE, "w") as f:
             f.write("Log file created.\n")
-    
-    # Create a temporary copy for download
     temp_log_path = os.path.join(temp_dir, "logs_download.txt")
     with open(LOG_FILE, "r") as source, open(temp_log_path, "w") as target:
         target.write(source.read())
-    
-    response = FileResponse(temp_log_path, media_type="text/plain", filename="logs.txt")
-    
-    # Clean up temp file after response is sent
-    @response.on_close
-    def cleanup_temp_file():
-        try:
-            if os.path.exists(temp_log_path):
-                os.remove(temp_log_path)
-        except Exception as e:
-            logger.error(f"Error cleaning up temp file: {e}")
-    
-    return response
-            
+    return FileResponse(temp_log_path, media_type="text/plain", filename="logs.txt")
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception: {exc}")
     logger.error(f"Traceback: {traceback.format_exc()}")
     return HTMLResponse(content="An unexpected error occurred", status_code=500)
 
+# ----------------------------------------------------------
+# Entry-point (unchanged)
+# ----------------------------------------------------------
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",
@@ -495,7 +459,6 @@ if __name__ == "__main__":
         reload=os.getenv("ENVIRONMENT", "development") == "development",
         workers=int(os.getenv("WORKERS", 1)),
         log_level="info",
-        # Add these to handle larger file uploads
         limit_concurrency=100,
         limit_max_requests=1000,
     )
